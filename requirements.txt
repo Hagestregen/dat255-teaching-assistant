@@ -1,0 +1,44 @@
+# Core Hugging Face libraries for models + datasets
+transformers>=4.50.0          # or >=5.0.0 if you want the newest major version
+datasets>=3.0.0
+huggingface_hub>=0.25.0       # usually pulled by the above, but good to be explicit
+
+# Evaluation & training helpers (very commonly used)
+evaluate>=0.4.0
+accelerate>=1.0.0             # highly recommended when training / using multi-GPU / mixed precision
+
+# Visualization & numerics (numpy usually already present via torch)
+matplotlib>=3.9.0
+seaborn>=0.13.0               # optional but very useful companion to matplotlib
+pandas>=2.2.0                 # very handy for handling datasets & results
+
+# Jupter notebook
+ipykernel
+nbstripout
+
+# RAG libraries
+# faiss-cpu    # for CPU-based similarity search
+# faiss-gpu    # for GPU-based similarity search
+# Replace FAISS since it uses numpy 1.x which is not compatible with numpy 2.x
+hnswlib
+sentence-transformers
+langchain-text-splitters
+
+# Scraping libraries
+requests 
+trafilatura
+
+# Other libraries
+tiktoken # for tokenization
+
+# Optional but frequently used extras
+# pillow                       # image loading (usually comes with torchvision)
+# scipy                        # sometimes needed for metrics or processing
+# scikit-learn                 # for traditional ML metrics / splitting
+
+# If you do a lot of image models
+# timm                         # extra backbones (sometimes used together with HF)
+
+# If you work with quantized / efficient inference
+# bitsandbytes>=0.44.0         # 8-bit / 4-bit quantization support
+# peft                         # LoRA / QLoRA / adapters
