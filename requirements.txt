@@ -27,6 +27,7 @@ langchain-text-splitters
 # Scraping libraries
 requests 
 trafilatura
+bs4
 
 # Other libraries
 tiktoken # for tokenization

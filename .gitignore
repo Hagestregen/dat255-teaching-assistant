@@ -12,3 +12,5 @@ __pycache__
 *.pyzwzwzw
 
 notebooks/build_nanoGPT/build-nanogpt
+
+dat255_venv
