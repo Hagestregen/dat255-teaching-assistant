@@ -28,6 +28,8 @@ langchain-text-splitters
 requests 
 trafilatura
 bs4
+moviepy # for mp4 to mp3 conversion (audio extraction)
+faster-whisper # for transcription of audio to text
 
 # Other libraries
 tiktoken # for tokenization

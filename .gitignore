@@ -14,3 +14,7 @@ __pycache__
 notebooks/build_nanoGPT/build-nanogpt
 
 dat255_venv
+
+*.mp4
+
+*.mp3
