@@ -56,12 +56,45 @@ Jupyter files stores metadata such as execution_count, outputs and others which 
 
 so before commiting anything jupyter related, install:
 
-```
+```bash
 pip install nbstripout
 ```
 
 In the folder with the .git file (/RegModel) run:
 
-```
+```bash
 nbstripout --install
 ```
+
+## FAQ
+
+### pip install ipywidgets crashes on windows
+
+**The problem is Windows' default 260-character path limit.**  
+The `jupyterlab_widgets` package (part of ipywidgets) installs files with very long paths, which hits this limit → pip fails with "No such file or directory".
+
+1. **Enable Long Paths via PowerShell**  
+    Open **PowerShell as Administrator** and run this single command:
+
+    ```powershell
+    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+    ```
+
+2. Try installing again:
+
+    ```bash
+    pip install ipywidgets
+    ```
+
+3. **If it dosent work still: Restart your computer**.
+
+#### After Fixing
+
+You can also clean pip's cache if you keep getting errors:
+
+```bash
+pip cache purge
+pip install ipywidgets --no-cache-dir
+```
+
+This should resolve the issue permanently. Let me know if you get any new error after restarting!

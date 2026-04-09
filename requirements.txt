@@ -19,7 +19,9 @@ pandas>=2.2.0                 # very handy for handling datasets & results
 
 # Jupyter notebook
 ipykernel
+ipywidgets
 nbstripout
+
 
 # RAG libraries
 # faiss-cpu    # for CPU-based similarity search
@@ -28,6 +30,7 @@ nbstripout
 hnswlib
 sentence-transformers
 langchain-text-splitters
+langchain
 
 # Scraping libraries
 requests

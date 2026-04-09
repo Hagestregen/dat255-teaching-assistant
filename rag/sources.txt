@@ -1,0 +1,18 @@
+# sources.txt — RAG manifest file
+# One path per line. Lines starting with # are ignored.
+# Paths can be folders (all .md files inside are used) or individual .md files.
+
+# Book chapters scraped with scrape_to_md.py
+# book_md/
+../data/dl_with_python_3ed/ch08_image-classification.md
+
+# Course notebooks converted with scrape_notebooks.py
+# notebook_md/
+
+# Lecture slides converted with scrape_slides.py
+# slide_md/
+# ../data/lecture_transcript_raw/
+
+
+# Individual file example (uncomment to use):
+# extra/custom_notes.md

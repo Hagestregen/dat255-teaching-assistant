@@ -187,9 +187,12 @@ Output: `../../data/lecture_transcript/lecture3-computer_vision_and_the_concepts
 | `Qwen/Qwen2.5-1.5B-Instruct` | ~3 GB | Noticeably better at following the "don't summarise" rule. |
 | `microsoft/Phi-3-mini-4k-instruct` | ~7 GB | High quality, needs a GPU to be practical. |
 
-Example with a larger model:
+Batch (all raw transcripts in `data/lecture_transcript_raw/`):
 
 ```bash
-python lecture_transcript_refine.py "../../data/lecture_transcript_raw/lecture3.md" \
-  "Qwen/Qwen2.5-1.5B-Instruct"
+# Windows
+refine_all_raw.bat
+
+# Linux / macOS
+./refine_all_raw.bash
 ```
