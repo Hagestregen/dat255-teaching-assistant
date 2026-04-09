@@ -1,0 +1,21 @@
+Title: sequences and time series
+Timeseries forecasting
+8:00
+Sequences
+8:27
+Sequence prediction tasks
+12:24
+Sequence classification
+17:27
+Convolutions recap (but 1D)
+19:30
+Convolution appreciation slide
+25:12
+Sequence forecasting: Predicting the future
+29:57
+Seasonality
+32:39
+Recurrent neural networks (RNNs)
+34:27
+Input and output sequences
+46:24

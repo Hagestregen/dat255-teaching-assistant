@@ -1,0 +1,37 @@
+Title: natural language processing: embeddings
+From yesterday:
+1:51
+Embeddings
+3:45
+TensorBoard
+13:12
+Computing similarity in embedding space
+31:42
+Better text tokenisation
+49:15
+The Tokenizer Playground
+54:45
+Pretrained embeddings and models
+55:33
+N LP resources
+59:30
+Hugging Face
+1:01:24
+Other uses of embeddings
+1:04:48
+Embed everything
+1:06:51
+Sentence embedding
+1:09:00
+Image embedding
+1:10:42
+Audio embedding
+1:15:45
+Latent spaces
+1:17:30
+Pretrained embeddings
+1:22:51
+Measuring embedding quality
+1:23:42
+Contextualised word embeddings
+1:25:00

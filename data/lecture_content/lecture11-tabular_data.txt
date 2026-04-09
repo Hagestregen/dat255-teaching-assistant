@@ -1,0 +1,33 @@
+Title: tabular data
+Gradio (and Streamlit) deployment
+8:24
+Course notebooks
+8:39
+Tabular data
+9:33
+This week
+9:45
+(Some) types of data
+11:18
+Tabular data
+13:06
+Feature normalisation
+17:12
+Normalization layer
+21:57
+Keras
+22:12
+Feature transformations
+22:39
+Compare the effect of different scalers on data with outliers
+26:15
+QuantileTransformer (Gaussian output)
+28:39
+Dealing with text and categorical data
+30:15
+Embeddings
+36:54
+Network architectures for tabular data
+46:27
+The best model for tabular data
+49:00

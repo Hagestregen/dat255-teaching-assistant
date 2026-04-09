@@ -1,0 +1,27 @@
+Title: optimisers and loss curves
+Loss functions
+10:00
+Gradient descent
+17:45
+Local minima
+19:09
+Keras
+20:27
+Optimizers
+22:12
+Comparing gradient descent algorithms
+22:48
+Momentum optimisation
+25:12
+Nesterov accelerated gradient
+30:06
+AdaGrad (Adaptive Gradient)
+32:24
+Adam (and friends)
+35:27
+Comparison and guidelines
+38:27
+Learning rate and loss curves
+42:21
+Learning rate scheduling
+47:06

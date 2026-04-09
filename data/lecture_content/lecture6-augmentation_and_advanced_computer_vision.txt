@@ -1,0 +1,35 @@
+Title: augmentation and advanced computer vision
+Improving generalisation
+2:42
+Augmentation
+6:03
+More advanced network configurations
+14:51
+Baseline model
+15:30
+The Keras functional API
+16:51
+Example: Bird classifier
+21:06
+Non-sequential networks
+33:39
+Residual connections
+35:36
+Residual networks
+50:24
+Densely connected convolutional networks
+59:09
+Inception networks
+1:02:09
+Beyond CNNs: Vision transformers
+1:09:39
+keras.applications
+1:13:06
+Feature extraction
+1:13:15
+Fine-tuning
+1:16:48
+Modern convolutional networks for computer vision
+1:23:18
+Other computer vision tasks (next week)
+1:23:45

@@ -1,0 +1,54 @@
+DAT255: Deep learning engineering
+0:09
+Training LLMs
+1:48
+Distributed training
+2:21
+Supervised fine-tuning
+3:12
+LLM fine-tuning with limited resources
+10:03
+Low-rank adaptation (LoRA)
+16:00
+Quantization
+20:06
+more extreme:
+23:51
+Knowledge distillation
+25:54
+Transformers for other data types
+30:33
+General transformers
+32:09
+Visual attention
+35:36
+Mistakes :1
+40:15
+A man is talking on his cell phone while another man…
+40:30
+is talking on his cell phone nother man watches.
+41:09
+Transformers for computer vision
+57:33
+Vision transformer (ViT) for classification
+1:00:00
+Positional embeddings
+1:05:09
+Combined architecture
+1:07:30
+backbone
+1:08:54
+decoder
+1:09:57
+Inductive biases
+1:11:36
+Combining vision and text
+1:16:33
+Audio transformers
+1:18:45
+The Challenge of StarCraft
+1:29:15
+DeepMind
+1:29:33
+Multimodal transformers
+1:30:18

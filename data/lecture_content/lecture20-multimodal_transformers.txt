@@ -1,0 +1,39 @@
+Title: multimodal transformers
+Training LLMs
+1:48
+Distributed training
+2:21
+Supervised fine-tuning
+3:12
+LLM fine-tuning with limited resources
+10:03
+Low-rank adaptation (LoRA)
+16:00
+Quantization
+20:06
+Knowledge distillation
+25:54
+Transformers for other data types
+30:33
+General transformers
+32:09
+Visual attention
+35:36
+Transformers for computer vision
+57:33
+Vision transformer (ViT) for classification
+1:00:00
+Positional embeddings
+1:05:09
+Combined architecture
+1:07:30
+Inductive biases
+1:11:36
+Combining vision and text
+1:16:33
+Audio transformers
+1:18:45
+The Challenge of StarCraft
+1:29:15
+Multimodal transformers
+1:30:18

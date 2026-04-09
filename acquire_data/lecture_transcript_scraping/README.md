@@ -144,7 +144,7 @@ Batch (all MP3s in `data/lecture_mp3/`, topics from `data/lecture_content/`):
 transcribe_all_mp3.bat
 
 # Linux / macOS
-./transcribe_all_mp3.bash
+bash transcribe_all_mp3.bash
 ```
 
 The batch scripts warn if a topics file is missing but still attempt transcription for every MP3.

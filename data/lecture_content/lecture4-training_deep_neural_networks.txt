@@ -1,0 +1,47 @@
+Title: training deep neural networks
+Keras layers
+7:03
+Decomposition into simple patters
+7:57
+The Conv2D layer
+10:36
+Pooling layers
+12:48
+The MaxPooling2D layer
+15:48
+The Dense layer
+16:36
+My first convolutional network
+17:36
+Decomposition into simple patters: Theory vs practice
+32:00
+Layer activations
+33:54
+What is a Convolutional Neural Network?
+41:54
+The activation function
+45:54
+Last layer activation functions
+51:45
+Finding optimal parameters
+55:09
+Backpropagation
+56:45
+Gradient descent
+1:00:03
+Learning rate
+1:04:24
+Practical problems
+1:06:33
+Vanishing and exploding gradients
+1:08:36
+Some tricks
+1:16:12
+Regularisation
+1:20:03
+Dropout regularisation
+1:21:15
+Putting together an improved network
+1:23:00
+Best practices
+1:25:51

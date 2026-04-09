@@ -1,0 +1,19 @@
+Title: image segmentation
+Computer vision tasks
+8:18
+Image segmentation
+16:18
+Building a semantic segmentation model
+19:00
+Defining the model
+25:21
+Transposed convolution
+30:30
+Improved segmentation models: the U-Net
+35:54
+Net use cases
+39:21
+State-of-the-art image segmentation
+42:12
+Segment Anything 2 Demo
+43:21

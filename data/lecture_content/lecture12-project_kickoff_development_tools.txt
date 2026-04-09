@@ -1,0 +1,53 @@
+Title: project kickoff and development tools
+Project kickoff
+7:57
+Assignment rules and grading criteria
+11:27
+Evaluation criteria
+13:15
+Requirements for the submission
+13:27
+Formalities
+14:30
+Scope and expectations
+16:33
+Submission format
+23:54
+Project report template
+24:12
+Next week: Project week
+30:48
+Remember to think about your future
+33:51
+The ML project lifecycle
+34:39
+Experiment tracking
+39:27
+Fundamentals of machine learning
+42:48
+Tools for experiment tracking
+45:57
+Keras
+47:48
+TensorFlow
+48:33
+Hyperparameter optimisation
+52:21
+Machine Learning
+54:09
+Hyperparameter optimisation: Grid scan
+54:45
+Hyperparameter optimisation: Intelligent choices
+59:42
+Hyperparameter Relationships
+1:10:03
+Custom callbacks
+1:12:54
+Custom metrics
+1:16:03
+Custom loss functions
+1:17:51
+Custom layers
+1:20:51
+Custom models
+1:23:12

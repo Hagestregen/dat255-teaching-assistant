@@ -1,0 +1,33 @@
+Title: sequences and time series
+Project pre-approval
+7:51
+Requirements
+8:39
+Project
+11:57
+Project submission date
+16:39
+Exams to use for preparation
+20:24
+mal-prosjektrapport
+20:45
+Sequences
+21:57
+Recurrent neural networks (RNNs)
+23:06
+Intermezzo: Autoregressive models
+26:33
+Improved memory cells
+35:09
+The long short-term memory (LSTM) cell
+38:12
+The gated recurrent unit (GRU)
+45:00
+Stacking recurrent layers
+51:54
+Training RNNs
+54:33
+Bonus trick #1: CNN processing
+1:01:45
+Bonus trick #2: bidirectional RNNs
+1:07:09
