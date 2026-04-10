@@ -10,7 +10,7 @@ Pass 2 — Size cap:       RecursiveCharacterTextSplitter sub-chunks anything
                          still too large, preserving header metadata.
 
 Usage:
-    python chunker.py --manifest sources.txt [--output chunks.json]
+    python chunker.py --manifest sources.txt [--output rag_index/chunks.json]
 
 Manifest format (sources.txt):
     # Lines starting with # are comments and are ignored
@@ -176,8 +176,8 @@ def main():
     parser = argparse.ArgumentParser(description="Structure-aware Markdown chunker")
     parser.add_argument("--manifest", required=True,
                         help="Path to the manifest .txt file")
-    parser.add_argument("--output",   default="chunks.json",
-                        help="Output JSON file (default: chunks.json)")
+    parser.add_argument("--output",   default="rag_index/chunks.json",
+                        help="Output JSON file (default: rag_index/chunks.json)")
     args = parser.parse_args()
 
     print(f"Loading manifest: {args.manifest}")

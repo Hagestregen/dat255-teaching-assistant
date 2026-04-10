@@ -38,12 +38,22 @@ import numpy as np
 DEFAULT_INDEX_DIR = "rag_index"
 
 
+def detect_device() -> str:
+    """Return 'cuda' or 'cpu' depending on what's available."""
+    try:
+        import torch
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        return "cpu"
+
+
 class Retriever:
-    def __init__(self, index_dir: str = DEFAULT_INDEX_DIR):
+    def __init__(self, index_dir: str = DEFAULT_INDEX_DIR, device: str | None = None):
         import hnswlib
         from sentence_transformers import SentenceTransformer
 
         index_dir = Path(index_dir)
+        self.device = device or detect_device()
 
         # ── Load metadata (tells us which model to use) ───────────────────────
         meta_path = index_dir / "index_meta.json"
@@ -72,8 +82,8 @@ class Retriever:
         self.index.set_ef(50)   # query-time ef; raise for better accuracy
 
         # ── Load embedding model ──────────────────────────────────────────────
-        print(f"Loading embedding model '{self.model_name}' …")
-        self.model = SentenceTransformer(self.model_name)
+        print(f"Loading embedding model '{self.model_name}' on {self.device} …")
+        self.model = SentenceTransformer(self.model_name, device=self.device)
         print("Retriever ready.\n")
 
     # ── Core retrieval ────────────────────────────────────────────────────────
@@ -143,7 +153,7 @@ class Retriever:
             if len(results) >= top_k:
                 break
 
-        return sorted(results, key=lambda r: r["score"], reverse=True)
+        return results
 
     def format_results(self, results: list[dict], show_text: bool = True) -> str:
         """Pretty-print retrieval results."""
@@ -185,9 +195,12 @@ def main():
     parser.add_argument("--min-score",     type=float, default=0.0)
     parser.add_argument("--no-text",       action="store_true",
                         help="Don't print chunk text, only scores and sources")
+    parser.add_argument("--device",        default=None,
+                        choices=["cpu", "cuda"],
+                        help="Compute device for the embedding model (default: auto-detect)")
     args = parser.parse_args()
 
-    r = Retriever(index_dir=args.index_dir)
+    r = Retriever(index_dir=args.index_dir, device=args.device)
     results = r.query(
         args.query,
         top_k=args.top_k,

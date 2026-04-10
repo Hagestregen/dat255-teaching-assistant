@@ -10,7 +10,10 @@ SentenceTransformers, and saves:
     chunks.json      — untouched; embedder reads but doesn't modify it
 
 Usage:
-    python embedder.py [--chunks chunks.json] [--out-dir ./rag_index] [--device cpu|cuda]
+    python embedder.py [--chunks rag_index/chunks.json] [--out-dir ./rag_index] [--device cpu|cuda]
+
+    Example:
+    python embedder.py --chunks rag_index/chunks.json --out-dir rag_index --device cuda
 
 Requirements:
     pip install sentence-transformers hnswlib numpy
@@ -93,23 +96,25 @@ def build_hnsw_index(embeddings: np.ndarray) -> "hnswlib.Index":
 
 def main():
     parser = argparse.ArgumentParser(description="Embed chunks and build HNSW index")
-    parser.add_argument("--chunks",  default="chunks.json",
+    parser.add_argument("--chunks",  default="rag_index/chunks.json",
                         help="chunks.json produced by chunker.py")
     parser.add_argument("--out-dir", default="rag_index",
                         help="Directory to save index files (default: rag_index/)")
     parser.add_argument("--device",  default=None,
                         choices=["cpu", "cuda"],
                         help="Compute device (default: auto-detect)")
+    parser.add_argument("--model",   default=None,
+                        help="Override the SentenceTransformer model name") 
     parser.add_argument("--batch-size", type=int, default=64)
     args = parser.parse_args()
 
     device = args.device or detect_device()
-    model_name = CUDA_MODEL if device == "cuda" else CPU_MODEL
+    model_name = args.model or CUDA_MODEL if device == "cuda" else CPU_MODEL
     print(f"Device: {device}  →  model: {model_name}")
 
     chunks_path = Path(args.chunks)
     if not chunks_path.exists():
-        raise FileNotFoundError(f"chunks.json not found: {chunks_path}\n"
+        raise FileNotFoundError(f"rag_index/chunks.json not found: {chunks_path}\n"
                                 "Run chunker.py first.")
 
     out_dir = Path(args.out_dir)
