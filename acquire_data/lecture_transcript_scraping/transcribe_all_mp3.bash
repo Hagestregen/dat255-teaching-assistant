@@ -19,7 +19,7 @@ for file in ../../data/lecture_mp3/*.mp3; do
         else
             echo "Warning: Topics file $topics_file not found. Proceeding without topics."
         fi
-        python lecture_transcript_md.py "$file" "$topics_file" "$output_md"
+        python lecture_transcribe.py "$file" "$topics_file" "$output_md"
         
         if [ $? -eq 0 ]; then
             echo "✓ $base transcribed successfully"

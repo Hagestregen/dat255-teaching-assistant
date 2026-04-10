@@ -1,65 +1,82 @@
 import re
 import sys
+import warnings
 from pathlib import Path
 
 import torch
 from tqdm import tqdm
 from transformers import GenerationConfig, pipeline
 
-# ── Model config ───────────────────────────────────────────────────────────────
-#
-# CPU — small, reliable, fast enough
-#   "Qwen/Qwen2.5-1.5B-Instruct"     ~3 GB RAM   ← default CPU choice
-#   "Qwen/Qwen2.5-0.5B-Instruct"     ~1 GB RAM   — often hallucinates on messy input
-#
-# GPU (laptop 3080, ~8 GB VRAM)
-#   "Qwen/Qwen2.5-3B-Instruct"       ~6 GB VRAM  ← default GPU choice, handles long context
-#   "microsoft/Phi-3-mini-4k-instruct"  ~7 GB VRAM  — excellent quality, tight on 8 GB
-#   "Qwen/Qwen2.5-7B-Instruct"       ~15 GB VRAM — needs 16 GB
+# Suppress the "pipelines sequentially on GPU" info message — we are doing this
+# intentionally (one section at a time) and the Dataset API adds complexity we don't need.
+warnings.filterwarnings(
+    "ignore",
+    message="You seem to be using the pipelines sequentially on GPU",
+)
 
+# ── Model config ───────────────────────────────────────────────────────────────
 CPU_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"
 GPU_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 
-# ── Chunk / token limits ───────────────────────────────────────────────────────
-# Sections larger than this (in words) are split into smaller chunks before
-# sending to the model.  Keeping inputs short is especially important on CPU
-# where a 600-word section already takes ~15–20 s on a 1.5B model.
-#
-# Rule of thumb: 1 word ≈ 1.3 tokens for English prose.
-CPU_MAX_CHUNK_WORDS = 500    # ~650 tokens  →  reasonable CPU speed
-GPU_MAX_CHUNK_WORDS = 2000   # ~2600 tokens →  comfortably within 3B context window
+# ── Chunk limits (words) ───────────────────────────────────────────────────────
+CPU_MAX_CHUNK_WORDS = 300   # small model quality drops fast with long input
+GPU_MAX_CHUNK_WORDS = 1500
 
 # ── Prompts ────────────────────────────────────────────────────────────────────
-# Small (CPU) models follow short, imperative prompts best.
-# Larger (GPU) models benefit from a concrete few-shot example.
+#
+# Key insight: small (CPU) models follow short, imperative prompts best.
+# Larger (GPU) models benefit from an explicit filler list + a dramatic example.
+#
+# The example below is intentionally "bad input → very clean output" to push
+# the model toward being aggressive rather than timid.
 
 CPU_SYSTEM = (
-    "Remove filler words from this spoken transcript. "
-    "Output only the cleaned text, nothing else."
+    "Clean this spoken transcript. "
+    "Remove filler words (um, uh, so, you know, right, kind of, basically, well, okay, like, I mean). "
+    "Fix grammar after removal. Output only the cleaned text."
 )
-
-# The input/output marker keeps small models from re-explaining the task.
 CPU_USER_TEMPLATE = "INPUT:\n{text}\n\nOUTPUT:"
 
-GPU_SYSTEM = (
-    "You remove filler words from spoken lecture transcripts.\n"
-    "Output only the cleaned transcript text — no explanations, no labels, nothing else."
-)
+# ---------------------------------------------------------------------------
+GPU_SYSTEM = """\
+You clean spoken lecture transcripts into readable prose.
+
+REMOVE all of the following:
+- Filler words: um, uh, so (as filler), you know, right (as filler), kind of,
+  sort of, basically, well (as filler), okay (as filler), I mean, actually (as
+  filler at start of clause), like (as filler)
+- Sentence-opening clutter: "So...", "And so...", "Okay so...", "And then..."
+- False starts and self-corrections: "we, at least those of you who are..."
+- Obvious repetitions of the same idea within one sentence
+
+KEEP every technical fact, example, analogy, and explanation.
+Fix grammar and sentence flow after removing clutter.
+Output only the cleaned text — no labels, no commentary."""
 
 GPU_USER_TEMPLATE = """\
-Example
-INPUT: "Um, so yeah, the gradient descent algorithm, you know, it kind of updates the weights, right, based on the loss."
-OUTPUT: "The gradient descent algorithm updates the weights based on the loss."
+Example — this is the level of cleaning expected:
 
-Now clean the following transcript. Output only the cleaned text:
+BEFORE:
+"Yes, it's time, so let's get started. So many of the, at least those of you \
+who are master students should be on this research seminar. So that's why we \
+are a bit fewer people, but okay. So still a very important topic for today. \
+So we're now starting our natural language processing."
+
+AFTER:
+"Let's get started. Master students should be on the research seminar, which \
+is why we have fewer people today. It's still a very important topic. We're \
+now starting natural language processing."
+
+Now clean the following transcript to the same standard:
 {text}"""
+
 
 # ── Hallucination detection ────────────────────────────────────────────────────
 _HALLUCINATION_RE = re.compile(
     r"^sure,?\s+here"
     r"|^here'?s?\s+the\s+clean"
     r"|^i'?ll\s+clean"
-    r"|^cleaned\s+text"
+    r"|^cleaned\s+(text|transcript|version)"
     r"|^i'?m\s+ready"
     r"|^\*\*cleaned"
     r"|^---"
@@ -69,8 +86,7 @@ _HALLUCINATION_RE = re.compile(
     r"|^output:",
     re.IGNORECASE | re.MULTILINE,
 )
-
-_WRAPPER_RE = re.compile(
+_WRAPPER_RE     = re.compile(
     r'^(\*{1,3}|---|"|\bsure\b|\bhere\b|\bi\'ll\b|\bcleaned\b|\boutput\b)',
     re.IGNORECASE,
 )
@@ -80,8 +96,7 @@ _QUOTE_FENCE_RE = re.compile(r'^["\'`]{1,3}$|^-{3,}$')
 # ── Markdown parsing ───────────────────────────────────────────────────────────
 
 def parse_sections(content: str) -> list[tuple[str, str]]:
-    pattern = r'^(#{1,6} .+)$'
-    parts = re.split(pattern, content, flags=re.MULTILINE)
+    parts = re.split(r'^(#{1,6} .+)$', content, flags=re.MULTILINE)
     sections: list[tuple[str, str]] = []
     if parts[0].strip():
         sections.append(("", parts[0]))
@@ -100,7 +115,6 @@ def rebuild_markdown(sections: list[tuple[str, str]]) -> str:
         is_title   = header.startswith("# ")  and not header.startswith("## ")
         is_section = bool(header) and not is_title
         stripped   = body.strip()
-
         if is_title:
             lines.append(header)
         elif is_section:
@@ -109,25 +123,17 @@ def rebuild_markdown(sections: list[tuple[str, str]]) -> str:
         elif header:
             lines.append("")
             lines.append(header)
-
         if stripped:
             lines.append("")
             lines.append(stripped)
-
     return "\n".join(lines) + "\n"
 
 
 # ── Section chunking ───────────────────────────────────────────────────────────
 
 def _split_into_chunks(text: str, max_words: int) -> list[str]:
-    """
-    Split *text* into chunks of at most *max_words* words,
-    preferring sentence boundaries ('. ', '.\n').
-    """
-    # Tokenise on sentence endings first, then fall back to word-count hard split.
-    sentence_end = re.compile(r'(?<=[.!?])\s+')
-    sentences = sentence_end.split(text.strip())
-
+    """Split on sentence boundaries; hard-split any sentence that is itself too long."""
+    sentences   = re.split(r'(?<=[.!?])\s+', text.strip())
     chunks: list[str] = []
     current: list[str] = []
     current_words = 0
@@ -137,8 +143,7 @@ def _split_into_chunks(text: str, max_words: int) -> list[str]:
         if current_words + w > max_words and current:
             chunks.append(" ".join(current))
             current, current_words = [], 0
-        # A single sentence that is itself over the limit gets hard-split by words.
-        if w > max_words:
+        if w > max_words:                       # single giant sentence — word-split it
             words = sentence.split()
             for i in range(0, len(words), max_words):
                 chunks.append(" ".join(words[i : i + max_words]))
@@ -148,7 +153,6 @@ def _split_into_chunks(text: str, max_words: int) -> list[str]:
 
     if current:
         chunks.append(" ".join(current))
-
     return chunks
 
 
@@ -184,6 +188,12 @@ def _strip_meta_preamble(text: str) -> str:
     return "\n".join(real_lines)
 
 
+def _ends_mid_sentence(text: str) -> bool:
+    """Heuristic: output probably got cut off if it doesn't end with punctuation."""
+    stripped = text.rstrip()
+    return bool(stripped) and stripped[-1] not in ".!?\"'"
+
+
 def sanitize_output(raw: str, original: str) -> str:
     if not raw.strip():
         return original
@@ -191,7 +201,10 @@ def sanitize_output(raw: str, original: str) -> str:
         recovered = _strip_meta_preamble(raw)
         if len(recovered.strip()) > 30:
             return recovered
-        print("    [WARN] model hallucinated — keeping original text for this chunk")
+        print("    [WARN] hallucination detected — keeping original text for this chunk")
+        return original
+    if _ends_mid_sentence(raw):
+        print("    [WARN] output appears truncated — keeping original text for this chunk")
         return original
     return raw
 
@@ -203,14 +216,17 @@ def _refine_chunk(pipe, chunk: str, system_prompt: str, user_template: str) -> s
         {"role": "system", "content": system_prompt},
         {"role": "user",   "content": user_template.format(text=chunk.strip())},
     ]
-    max_new_tokens = max(64, int(len(chunk.split()) * 1.1))
 
-    # Fix: use a GenerationConfig object so we don't mix config + explicit kwargs
-    # (avoids the "Passing generation_config together with generation-related
-    #  arguments is deprecated" warning).
+    # Give generous headroom — output is always shorter than input, so this is
+    # cheap on GPU and avoids mid-sentence truncation.
+    # Explicitly resetting temperature/top_p/top_k silences the Qwen warning
+    # about "generation flags not valid".
+    max_new_tokens = max(256, int(len(chunk.split()) * 1.5))
     gen_cfg = GenerationConfig(
         max_new_tokens=max_new_tokens,
         do_sample=False,
+        temperature=1.0,   # ignored when do_sample=False; set explicitly to
+        top_p=1.0,         # prevent "generation flags not valid" warning
     )
 
     result = pipe(messages, generation_config=gen_cfg)
@@ -229,12 +245,9 @@ def refine_section(
 ) -> str:
     if not text.strip():
         return text
-
-    word_count = len(text.split())
-    if word_count <= max_chunk_words:
+    if len(text.split()) <= max_chunk_words:
         return _refine_chunk(pipe, text, system_prompt, user_template)
 
-    # Section is too large — split, refine each chunk, rejoin.
     chunks  = _split_into_chunks(text, max_chunk_words)
     refined = [_refine_chunk(pipe, c, system_prompt, user_template) for c in chunks]
     return " ".join(refined)
@@ -243,9 +256,25 @@ def refine_section(
 # ── Path helpers ───────────────────────────────────────────────────────────────
 
 def derive_output_path(input_path: Path) -> Path:
-    parts     = list(input_path.parts)
-    new_parts = [p[:-4] if p.endswith("_raw") else p for p in parts]
-    return Path(*new_parts)
+    parent = input_path.parent
+    folder_name = parent.name
+
+    # If there is no actual folder name (e.g. file in root or current dir),
+    # leave the path unchanged since there is no folder to alter
+    if not folder_name or folder_name == ".":
+        return input_path
+
+    # Apply the requested rule to the folder name only
+    if folder_name.endswith("_raw"):
+        new_folder_name = folder_name[:-4] + "_refined"
+    else:
+        new_folder_name = folder_name + "_refined"
+
+    # Rebuild the parent path with the modified folder name
+    new_parent = parent.parent / new_folder_name
+
+    # Keep the original filename unchanged
+    return new_parent / input_path.name
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -260,13 +289,12 @@ def main():
         print(f"Error: {input_md} not found.")
         sys.exit(1)
 
-    use_gpu   = torch.cuda.is_available()
-    default_model = GPU_MODEL if use_gpu else CPU_MODEL
-
-    model_id       = sys.argv[2] if len(sys.argv) >= 3 else default_model
-    output_md      = derive_output_path(input_md)
-    system_prompt  = GPU_SYSTEM  if use_gpu else CPU_SYSTEM
-    user_template  = GPU_USER_TEMPLATE if use_gpu else CPU_USER_TEMPLATE
+    use_gpu         = torch.cuda.is_available()
+    default_model   = GPU_MODEL if use_gpu else CPU_MODEL
+    model_id        = sys.argv[2] if len(sys.argv) >= 3 else default_model
+    output_md       = derive_output_path(input_md)
+    system_prompt   = GPU_SYSTEM        if use_gpu else CPU_SYSTEM
+    user_template   = GPU_USER_TEMPLATE if use_gpu else CPU_USER_TEMPLATE
     max_chunk_words = GPU_MAX_CHUNK_WORDS if use_gpu else CPU_MAX_CHUNK_WORDS
 
     output_md.parent.mkdir(parents=True, exist_ok=True)

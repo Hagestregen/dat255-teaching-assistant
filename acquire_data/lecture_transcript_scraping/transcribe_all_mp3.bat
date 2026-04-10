@@ -16,7 +16,7 @@ for %%f in (..\..\data\lecture_mp3\*.mp3) do (
     ) else (
         echo Warning: Topics file ..\..\data\lecture_content\!base!.txt not found. Proceeding without topics.
     )
-    python lecture_transcript_md.py "%%f" "..\..\data\lecture_content\!base!.txt" "..\..\data\lecture_transcript_raw\!base!.md"
+    python lecture_transcribe.py "%%f" "..\..\data\lecture_content\!base!.txt" "..\..\data\lecture_transcript_raw\!base!.md"
     
     if !errorlevel! equ 0 (
         echo ✓ !base! transcribed successfully

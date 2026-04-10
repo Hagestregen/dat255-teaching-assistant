@@ -15,9 +15,12 @@ lecture_transcript_md.py
       │  data/lecture_transcript_raw/*.md
       ▼
 lecture_transcript_refine.py
-      │  data/lecture_transcript/*.md
+      │  data/lecture_transcript_refined/*.md
       ▼
- Clean notes ✓
+lecture_transcript_summarize.py  (optional)
+      │  data/lecture_transcript_summary/*.md
+      ▼
+ Clean notes / summaries ✓
 ```
 
 ---
@@ -116,7 +119,7 @@ Timestamps can be `M:SS` or `H:MM:SS`. The two-line format (topic name on one li
 Single file:
 
 ```bash
-python lecture_transcript_md.py <input.mp3> <topics.txt> [output.md]
+python lecture_transcribe.py <input.mp3> <topics.txt> [output.md]
 ```
 
 | Argument | Description |
@@ -130,7 +133,7 @@ If the topics file is not found the script warns and continues, using a title de
 Example:
 
 ```bash
-python lecture_transcript_md.py \
+python lecture_transcribe.py \
   "../../data/lecture_mp3/lecture3-computer_vision_and_the_concepts_of_layers.mp3" \
   "../../data/lecture_content/lecture3-computer_vision_and_the_concepts_of_layers.txt"
 ```
@@ -168,7 +171,7 @@ python lecture_transcript_refine.py <input_raw.md> [model_id]
 | `<input_raw.md>` | Path to a raw transcript in `data/lecture_transcript_raw/` |
 | `[model_id]` | HuggingFace model ID — defaults to `Qwen/Qwen2.5-0.5B-Instruct` |
 
-The output is saved to the same relative path under `data/lecture_transcript/` (the `_raw` suffix is stripped from the folder name automatically).
+The output is saved to the same relative path under `data/lecture_transcript_refined/` (the `_raw` suffix on the folder name is replaced with `_refined`).
 
 Example:
 
@@ -177,7 +180,7 @@ python lecture_transcript_refine.py \
   "../../data/lecture_transcript_raw/lecture3-computer_vision_and_the_concepts_of_layers.md"
 ```
 
-Output: `../../data/lecture_transcript/lecture3-computer_vision_and_the_concepts_of_layers.md`
+Output: `../../data/lecture_transcript_refined/lecture3-computer_vision_and_the_concepts_of_layers.md`
 
 ### Choosing a model
 
@@ -195,4 +198,44 @@ refine_all_raw.bat
 
 # Linux / macOS
 ./refine_all_raw.bash
+```
+
+---
+
+## Step 4 — Summarize the Refined Transcript (optional)
+
+`lecture_transcript_summarize.py` compresses each section of a **refined** Markdown transcript into shorter study notes. Run it after refinement when you want a condensed version; it does not replace the refine step.
+
+The model is downloaded from HuggingFace on the first run and cached like the refine script.
+
+### Usage
+
+```bash
+python lecture_transcript_summarize.py <input_refined.md> [model_id]
+```
+
+| Argument | Description |
+|---|---|
+| `<input_refined.md>` | Path to a refined transcript in `data/lecture_transcript_refined/` |
+| `[model_id]` | HuggingFace model ID — defaults depend on GPU vs CPU (see script header) |
+
+The output is saved under `data/lecture_transcript_summary/` with the same filename (the parent folder `_refined` becomes `_summary`).
+
+Example:
+
+```bash
+python lecture_transcript_summarize.py \
+  "../../data/lecture_transcript_refined/lecture3-computer_vision_and_the_concepts_of_layers.md"
+```
+
+Output: `../../data/lecture_transcript_summary/lecture3-computer_vision_and_the_concepts_of_layers.md`
+
+Batch (all refined transcripts in `data/lecture_transcript_refined/`):
+
+```bash
+# Windows
+summarize_all.bat
+
+# Linux / macOS
+./summarize_all.bash
 ```
