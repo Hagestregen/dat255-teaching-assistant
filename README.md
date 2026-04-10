@@ -66,6 +66,36 @@ In the folder with the .git file (/RegModel) run:
 nbstripout --install
 ```
 
+## Hugging Face token (HF_TOKEN)
+
+When using models and dowloading them from huggingface, if you are sending an unauthenticated requests to the HF Hub, you can get: 
+- lower rate limits
+- Downloads can be slower
+- Some models may eventually require auth
+
+### Setting HF_TOKEN
+
+Step 1 — Get a token
+Go to: https://huggingface.co/settings/tokens
+Click “New token”
+Choose:
+Role: Read
+Copy it
+
+install cli (it is installed in the requirements)
+pip install huggingface_hub
+
+then
+hf auth login
+
+Paste your token.
+
+(Dont need to Add token as git credential? [y/N])
+
+it will be stored in 
+~/.cache/huggingface/token
+
+
 ## FAQ
 
 ### pip install ipywidgets crashes on windows
