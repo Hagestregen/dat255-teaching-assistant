@@ -145,8 +145,11 @@ def main():
     # (retriever needs to map index IDs back to text)
     import shutil
     dest_chunks = out_dir / "chunks.json"
-    shutil.copy(chunks_path, dest_chunks)
-    print(f"Chunks copied     → {dest_chunks}")
+    if chunks_path.resolve() != dest_chunks.resolve():
+        shutil.copy(chunks_path, dest_chunks)
+        print(f"Chunks copied     → {dest_chunks}")
+    else:
+        print(f"Chunks already in place → {dest_chunks}")
 
     # Save which model was used (retriever needs the same dim)
     meta = {"model": model_name, "device": device, "dim": int(embeddings.shape[1]),
