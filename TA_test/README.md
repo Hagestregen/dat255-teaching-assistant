@@ -5,7 +5,7 @@ and quizzes students on course material.
 
 ## File overview
 
-```
+```text
 teaching_assistant/
 ├── model.py          # Transformer with RoPE — the core model
 ├── dataset.py        # Data loading, normalization, QA formatting
@@ -111,7 +111,7 @@ that represents a token when reading it should work when generating it.
 
 ## Expected training curve
 
-```
+```text
 step 0:    loss ~10.8 (random, ~ln(50257))
 step 100:  loss ~6-7
 step 500:  loss ~4-5

@@ -3,7 +3,7 @@
 A lightweight, local RAG (Retrieval-Augmented Generation) pipeline for Markdown files.
 No cloud services required — runs fully on CPU or CUDA GPU.
 
-```
+```text
 your .md files
      │
      ▼
@@ -37,7 +37,7 @@ any section still larger than ~1 000 characters. Outputs `chunks.json`.
 
 ### Create a manifest
 
-```
+```text
 # sources.txt
 /path/to/docs/folder
 /path/to/single_file.md
@@ -57,13 +57,11 @@ python chunker.py --manifest sources.txt --output my_chunks.json
 
 ### Key config (top of file)
 
-
 | Variable              | Default               | Effect                           |
 | --------------------- | --------------------- | -------------------------------- |
 | `PASS2_CHUNK_SIZE`    | `1000`                | Max characters per chunk         |
 | `PASS2_CHUNK_OVERLAP` | `100`                 | Overlap between sub-chunks       |
 | `HEADERS_TO_SPLIT_ON` | `#` `##` `###` `####` | Header levels used as boundaries |
-
 
 ---
 
@@ -91,7 +89,6 @@ python embedder.py --model BAAI/bge-base-en-v1.5
 
 ### Output (inside `rag_index/` by default)
 
-
 | File              | Contents                     |
 | ----------------- | ---------------------------- |
 | `index.bin`       | HNSW binary index            |
@@ -99,15 +96,12 @@ python embedder.py --model BAAI/bge-base-en-v1.5
 | `chunks.json`     | Copy of input chunks         |
 | `index_meta.json` | Model name, dim, chunk count |
 
-
 ### Default models
-
 
 | Device     | Model                   | Dim | Notes                   |
 | ---------- | ----------------------- | --- | ----------------------- |
 | CPU        | `all-MiniLM-L6-v2`      | 384 | Fast, ~80 MB            |
 | CUDA / MPS | `BAAI/bge-base-en-v1.5` | 768 | Better quality, ~440 MB |
-
 
 ---
 
@@ -182,7 +176,7 @@ Each result is a dict:
 
 All three scripts share a common `detect_device()` priority:
 
-```
+```text
 CUDA  →  CPU
 ```
 
