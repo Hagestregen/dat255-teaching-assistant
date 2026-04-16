@@ -40,8 +40,14 @@ from typing import List, Optional
 
 import torch
 
-from model import TeachingAssistantModel, TransformerConfig
-from dataset import Tokenizer, format_rag_prompt
+# Ensure project root is importable whether this file is run standalone or
+# imported from app/gradio_app.py (which may already have set the path).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from model.transformer import TeachingAssistantModel, TransformerConfig
+from model.dataset import Tokenizer, format_rag_prompt
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -176,8 +182,8 @@ class RAGPipeline:
         )
 
         # Load the RAG retriever (your existing retriever.py)
-        sys.path.insert(0, str(Path(__file__).parent))
-        from retriever import Retriever
+        # sys.path.insert(0, str(Path(__file__).parent))
+        from rag.retriever import Retriever
         self.retriever = Retriever(index_dir=index_dir)
 
         print(f"RAG pipeline ready. top_k={top_k}, context_budget={context_budget} tokens")

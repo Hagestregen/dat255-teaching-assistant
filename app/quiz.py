@@ -60,11 +60,10 @@ class QuizQuestion:
         return self.options[self.correct_index]
 
     def display(self) -> str:
-        """Pretty-print the question for the terminal or Gradio."""
+        """Pretty-print the question without revealing the correct answer."""
         letters = ["A", "B", "C", "D"]
         lines = [f"Question: {self.question}\n"]
-        for i, (letter, opt) in enumerate(zip(letters, self.options)):
-            marker = "→" if i == self.correct_index else " "
+        for letter, opt in zip(letters, self.options):
             lines.append(f"  {letter}) {opt}")
         return "\n".join(lines)
 
@@ -82,6 +81,7 @@ class QuizQuestion:
 # SECTION 2: Quiz generation
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Raw-completion prompt — used only for the CUSTOM checkpoint (not instruction-tuned)
 QUIZ_PROMPT_TEMPLATE = """You are creating a multiple-choice quiz for a machine learning course.
 Based on the following lecture material, generate ONE quiz question.
 
@@ -111,32 +111,202 @@ Rules:
 - Do not output anything except the JSON object"""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Chat-format messages for instruction-tuned pretrained models (Qwen, Mistral…)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _quiz_chat_messages(topic: str, context: str) -> list:
+    """
+    Build a chat message list for instruction-tuned models.
+
+    WHY CHAT FORMAT, NOT RAW COMPLETION?
+    Instruction-tuned models (Qwen-Instruct, Mistral-Instruct) are trained to
+    respond to a [system] + [user] prompt pair, not to continue raw text.
+    When you send a raw completion prompt, the model sees it as text it should
+    extend — so it echoes back the template placeholders ("First option",
+    "Second option") instead of filling them with real content.
+    Chat format tells the model: "you are the assistant, now reply."
+
+    The system message keeps the model focused on JSON only.
+    The user message contains the lecture material and topic — no JSON skeleton,
+    which prevents the model copying placeholder text.
+    """
+    system = (
+        "You are a quiz generator for a machine learning course. "
+        "Your only output is a single valid JSON object — no prose, no markdown fences, "
+        "no explanation outside the JSON. "
+        "The JSON must have exactly these keys: "
+        "\"question\" (string), \"options\" (array of exactly 4 non-empty strings), "
+        "\"correct_index\" (integer 0-3), \"explanation\" (string)."
+    )
+    user = (
+        f"Generate one multiple-choice quiz question about the topic: \"{topic}\"\n\n"
+        f"Base the question on this lecture material:\n{context}\n\n"
+        "Requirements:\n"
+        "- All 4 options must be plausible (no obviously wrong answers)\n"
+        "- Distractors should be common misconceptions, not placeholder text\n"
+        "- correct_index is 0, 1, 2, or 3\n"
+        "- Randomise which position holds the correct answer\n"
+        "Output only the JSON object."
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": user},
+    ]
+
+
 def _extract_json(text: str) -> Optional[dict]:
     """
-    Extract a JSON object from model output.
+    Extract a quiz JSON object from model output using escalating strategies.
 
-    The model might output extra text before/after the JSON. We try:
-    1. Direct parse
-    2. Find JSON between { and } using regex
-    3. Give up and return None
+    Models commonly produce these defects — we handle all of them:
+      1. Markdown fences (```json ... ```)
+      2. Trailing commas before ] or }
+      3. "key": "value" pair instead of a plain string inside the options array
+         e.g.  "Distractor": "some text"  →  repaired to  "some text"
+      4. correct_index placed outside the main JSON object
+         e.g.  } "Correct_index" is 1.
+      5. Completely broken JSON → field-by-field regex extraction as last resort
+
+    Strategy order:
+      A) Clean + fix known defects → try json.loads
+      B) Outermost { } block → try json.loads
+      C) Regex field extraction (no JSON parser at all)
     """
-    text = text.strip()
+    original = text.strip()
 
-    # Try direct parse
+    # ── Pre-processing applied before every parse attempt ─────────────────
+    def _clean(s: str) -> str:
+        # Remove markdown fences
+        s = re.sub(r'```(?:json)?\s*', '', s)
+        s = s.replace('```', '')
+        # Trailing commas before ] or }
+        s = re.sub(r',\s*([}\]])', r'\1', s)
+        return s.strip()
+
+    def _fix_options_array(s: str) -> str:
+        """
+        Inside the options array, a model sometimes writes:
+            "SomeLabel": "actual option text"
+        instead of just:
+            "actual option text"
+        This regex finds that pattern only within the options array region and
+        replaces it with the value string alone.
+        """
+        opt_start = s.find('"options"')
+        if opt_start == -1:
+            return s
+        arr_open = s.find('[', opt_start)
+        arr_close = s.find(']', arr_open) if arr_open != -1 else -1
+        if arr_open == -1 or arr_close == -1:
+            return s
+        arr = s[arr_open:arr_close + 1]
+        # "AnyKey": "value"  →  "value"
+        fixed_arr = re.sub(r'"[^"]{1,30}"\s*:\s*("(?:[^"\\]|\\.)*")', r'\1', arr)
+        return s[:arr_open] + fixed_arr + s[arr_close + 1:]
+
+    def _inject_correct_index(s: str, full_text: str) -> str:
+        """
+        If correct_index is missing from the JSON but appears in trailing text,
+        inject it before the final closing brace.
+        """
+        if '"correct_index"' in s:
+            return s
+        m = re.search(r'[Cc]orrect(?:_index)?[^0-9]{0,15}([0-3])', full_text)
+        if not m:
+            return s
+        idx = m.group(1)
+        # Insert before the last }
+        last_brace = s.rfind('}')
+        if last_brace == -1:
+            return s
+        # Add comma if the char before } is not { (i.e. object is non-empty)
+        prefix = s[:last_brace].rstrip()
+        sep = ',' if prefix and prefix[-1] not in ('{', ',') else ''
+        return prefix + sep + f'\n  "correct_index": {idx}\n' + s[last_brace:]
+
+    # ── Strategy A: clean + fix defects → parse ───────────────────────────
+    cleaned = _clean(original)
+    cleaned = _fix_options_array(cleaned)
+    cleaned = _inject_correct_index(cleaned, original)
     try:
-        return json.loads(text)
+        return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON block with regex
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
+    # ── Strategy B: find outermost { } block and repeat ───────────────────
+    start = original.find('{')
+    end   = original.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        candidate = _clean(original[start:end + 1])
+        candidate = _fix_options_array(candidate)
+        candidate = _inject_correct_index(candidate, original)
         try:
-            return json.loads(match.group())
+            return json.loads(candidate)
         except json.JSONDecodeError:
             pass
 
-    return None
+    # ── Strategy C: regex field-by-field (no JSON parser) ─────────────────
+    return _extract_fields_by_regex(original)
+
+
+def _extract_fields_by_regex(text: str) -> Optional[dict]:
+    """
+    Last-resort extraction: pull each quiz field individually with regex.
+    Handles completely broken JSON where the parser cannot recover.
+
+    This is deliberately permissive — validation happens in _validate_quiz_json.
+    """
+    # question
+    q_m = re.search(r'"question"\s*:\s*"((?:[^"\\]|\\.)+)"', text)
+    if not q_m:
+        return None
+
+    # explanation (optional — we have a fallback)
+    e_m = re.search(r'"explanation"\s*:\s*"((?:[^"\\]|\\.)+)"', text)
+
+    # correct_index — several formats the model uses:
+    #   "correct_index": 1
+    #   "Correct_index" is 1.
+    #   correct index: 1
+    ci_m = (re.search(r'"correct_index"\s*:\s*([0-3])', text) or
+            re.search(r'[Cc]orrect(?:_index)?[^0-3]{0,20}([0-3])', text))
+    if not ci_m:
+        return None
+
+    # options — find the array region, then extract all substantial strings
+    # that are not JSON keys (i.e. not followed by a colon)
+    opt_start = text.find('"options"')
+    if opt_start == -1:
+        return None
+    arr_open = text.find('[', opt_start)
+    if arr_open == -1:
+        return None
+
+    # Scan up to 1000 chars from the array open; collect value strings
+    region = text[arr_open: arr_open + 1000]
+    options: list[str] = []
+    for m in re.finditer(r'"((?:[^"\\]|\\.){5,})"', region):
+        after = region[m.end(): m.end() + 5].strip()
+        if after.startswith(':'):
+            # This is a key — grab its value instead
+            val_m = re.match(r'\s*:\s*"((?:[^"\\]|\\.)+)"', region[m.end():m.end() + 200])
+            if val_m:
+                options.append(val_m.group(1))
+        else:
+            options.append(m.group(1))
+        if len(options) >= 4:
+            break
+
+    if len(options) < 4:
+        return None
+
+    return {
+        "question":      q_m.group(1),
+        "options":       options[:4],
+        "correct_index": int(ci_m.group(1)),
+        "explanation":   e_m.group(1) if e_m else "No explanation provided.",
+    }
 
 
 def _validate_quiz_json(data: dict) -> Optional[QuizQuestion]:
@@ -152,13 +322,33 @@ def _validate_quiz_json(data: dict) -> Optional[QuizQuestion]:
     correct  = data.get("correct_index", -1)
     explain  = data.get("explanation", "")
 
-    # Basic validation
+    # Basic structural validation
     if not question or len(question) < 10:
         return None
     if not isinstance(options, list) or len(options) != 4:
         return None
-    if not all(isinstance(o, str) and len(o) > 2 for o in options):
-        return None
+
+    # Each option must be a non-trivial string and must NOT look like
+    # a template placeholder (the model sometimes echoes "First option",
+    # "plausible distractor", etc. literally)
+    PLACEHOLDER_FRAGMENTS = {
+        "first option", "second option", "third option", "fourth option",
+        "plausible distractor", "correct answer)", "question text here",
+    }
+    for opt in options:
+        if not isinstance(opt, str) or len(opt.strip()) < 5:
+            return None
+        low = opt.lower()
+        if any(frag in low for frag in PLACEHOLDER_FRAGMENTS):
+            print(f"  [validation] rejected placeholder option: {opt!r}")
+            return None
+
+    # correct_index must be a valid integer index
+    if isinstance(correct, str):
+        try:
+            correct = int(correct)
+        except ValueError:
+            return None
     if not isinstance(correct, int) or correct not in range(4):
         return None
 
@@ -216,6 +406,63 @@ def generate_quiz_question_with_model(
 
         generated = tokenizer.decode(out[0, len(input_ids):].tolist())
         generated = generated.replace("<|endoftext|>", "").strip()
+
+        data = _extract_json(generated)
+        if data:
+            quiz = _validate_quiz_json(data)
+            if quiz:
+                quiz.topic        = topic
+                quiz.source_chunk = context
+                return quiz
+
+        print(f"  Attempt {attempt+1} failed to produce valid JSON. Retrying...")
+
+    print(f"  Failed to generate valid quiz after {max_retries} attempts.")
+    return None
+
+
+def generate_quiz_question_with_pretrained(
+    topic:      str,
+    pipe,                    # HuggingFace text-generation pipeline
+    retriever,
+    max_retries: int  = 3,
+    temperature: float = 0.7,
+) -> Optional[QuizQuestion]:
+    """
+    Generate a quiz question using a HuggingFace pretrained pipeline.
+
+    Uses chat-message format (system + user) instead of a raw completion
+    prompt — this is essential for instruction-tuned models like Qwen-Instruct
+    and Mistral-Instruct.  Raw completion prompts cause them to echo back the
+    template's placeholder text rather than generating real content.
+    """
+    chunks  = retriever.query(topic, top_k=2)
+    context = "\n---\n".join(c["text"] for c in chunks[:2])[:600]
+    messages = _quiz_chat_messages(topic, context)
+
+    for attempt in range(max_retries):
+        temp = temperature if attempt == 0 else 0.5
+        try:
+            result = pipe(
+                messages,
+                max_new_tokens=400,
+                do_sample=True,
+                temperature=temp,
+                top_p=0.95,
+                return_full_text=False,
+            )
+            # Chat pipelines return the assistant's message as a dict or string
+            raw = result[0]["generated_text"]
+            if isinstance(raw, list):
+                generated = raw[-1].get("content", "")
+            else:
+                generated = str(raw)
+            generated = generated.strip()
+        except Exception as e:
+            print(f"  Pipeline error on attempt {attempt+1}: {e}")
+            continue
+
+        print(f"  [pretrained] attempt {attempt+1} raw: {repr(generated[:120])}")
 
         data = _extract_json(generated)
         if data:

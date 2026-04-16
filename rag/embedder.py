@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import hnswlib
 
 # ── Model config ──────────────────────────────────────────────────────────────
 #
@@ -76,9 +77,7 @@ def embed_chunks(chunks: list[dict], model_name: str, device: str,
     return embeddings
 
 
-def build_hnsw_index(embeddings: np.ndarray) -> "hnswlib.Index":
-    import hnswlib
-
+def build_hnsw_index(embeddings: np.ndarray) -> hnswlib.Index:
     dim = embeddings.shape[1]
     n   = embeddings.shape[0]
 

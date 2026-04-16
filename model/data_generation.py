@@ -1,36 +1,46 @@
 """
-data_generation_local.py  —  Free local training data generation
-=================================================================
-Uses HuggingFace pipeline("text-generation") to generate training data,
-exactly the same way your embedder.py and inference code load models.
+data_generation.py  —  Local training data generation (free, no API keys)
+==========================================================================
+Uses HuggingFace pipeline("text-generation") to generate training data from
+your course material chunks.  Models are downloaded once to
+~/.cache/huggingface and reused on subsequent runs.
 
-Models are downloaded once to ~/.cache/huggingface and reused.
+MODEL TIERS
+───────────
+  CPU        Qwen/Qwen2.5-1.5B-Instruct          ~3 GB  slow, works anywhere
+  Laptop GPU Qwen/Qwen2.5-3B-Instruct            ~6 GB  good for testing
+  RTX 3090   Qwen/Qwen2.5-7B-Instruct            ~14 GB fp16, best quality
+  RTX 3090   Qwen/Qwen2.5-7B-Instruct:bnb4       ~5 GB  4-bit, fastest on 3090
 
-MODEL CONFIG (mirrors embedder.py style):
-  CPU:  "Qwen/Qwen2.5-1.5B-Instruct"    ~3 GB,  slow but works
-  GPU:  "Qwen/Qwen2.5-3B-Instruct"      ~6 GB,  good quality
-  GPU:  "Qwen/Qwen2.5-3B-Instruct:bnb4" ~2 GB,  4-bit, saves VRAM
+  Append ":bnb4" to ANY model ID for 4-bit loading (needs bitsandbytes):
+    "mistralai/Mistral-7B-Instruct-v0.3:bnb4"    ~5 GB  alternative 7B
 
-  Append ":bnb4" to any model ID to load it in 4-bit (needs bitsandbytes):
-    "mistralai/Mistral-7B-Instruct-v0.3:bnb4"  — best quality, ~5 GB VRAM
+  The 7B models produce noticeably better explanations and review feedback
+  than the 3B models — use them on the 3090 for your real data generation runs.
 
-USAGE:
-  # CPU test run (10 chunks):
-  python data_generation_local.py --chunks chunks.json --output data/train.jsonl \\
-      --model Qwen/Qwen2.5-1.5B-Instruct --max-chunks 10
+USAGE
+─────
+  # Laptop GPU (test run, 10 chunks):
+  python data_generation.py --chunks chunks.json --output data/train.jsonl \\
+      --max-chunks 10
 
-  # GPU full run:
-  python data_generation_local.py --chunks chunks.json --output data/train.jsonl \\
-      --model Qwen/Qwen2.5-3B-Instruct --max-chunks 300
+  # RTX 3090 — full quality, fp16:
+  python data_generation.py --chunks chunks.json --output data/train.jsonl \\
+      --model Qwen/Qwen2.5-7B-Instruct --max-chunks 300
 
-  # GPU 4-bit (saves ~2 GB VRAM):
-  python data_generation_local.py --chunks chunks.json --output data/train.jsonl \\
-      --model Qwen/Qwen2.5-3B-Instruct:bnb4 --max-chunks 300
+  # RTX 3090 — 4-bit (saves VRAM, still excellent quality):
+  python data_generation.py --chunks chunks.json --output data/train.jsonl \\
+      --model Qwen/Qwen2.5-7B-Instruct:bnb4 --max-chunks 300
+
+  # Resume interrupted run (automatically skips already-processed chunks):
+  python data_generation.py --chunks chunks.json --output data/train.jsonl \\
+      --model Qwen/Qwen2.5-7B-Instruct
 
   # Validate existing output:
-  python data_generation_local.py --validate --output data/train.jsonl
+  python data_generation.py --validate --output data/train.jsonl
 
-REQUIREMENTS:
+REQUIREMENTS
+────────────
   pip install transformers accelerate
   pip install bitsandbytes   # only needed for :bnb4 models
 """
@@ -50,13 +60,19 @@ import torch
 warnings.filterwarnings("ignore", message=".*max_new_tokens.*max_length.*")
 warnings.filterwarnings("ignore", message=".*generation_config.*generation-related.*")
 
-# ── Model config (same style as embedder.py) ──────────────────────────────────
-
-CPU_MODEL = "Qwen/Qwen2.5-1.5B-Instruct"    # ~3 GB download, runs on CPU
-GPU_MODEL = "Qwen/Qwen2.5-3B-Instruct"      # ~6 GB download, best on GPU
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Model loading  (mirrors your existing load_model pattern exactly)
+# Model config
+# ─────────────────────────────────────────────────────────────────────────────
+
+CPU_MODEL       = "Qwen/Qwen2.5-1.5B-Instruct"   # ~3 GB, runs on CPU
+LAPTOP_GPU_MODEL = "Qwen/Qwen2.5-3B-Instruct"    # ~6 GB, good for laptop GPU testing
+HIGHEND_GPU_MODEL = "Qwen/Qwen2.5-7B-Instruct"   # ~14 GB fp16, recommended for RTX 3090
+                                                  # Use ":bnb4" suffix to cut to ~5 GB 4-bit
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Model loading
 # ─────────────────────────────────────────────────────────────────────────────
 
 _pipeline = None   # module-level cache so we only load once
@@ -65,13 +81,16 @@ _pipeline = None   # module-level cache so we only load once
 def load_generator(model_id: str):
     """
     Load a text-generation pipeline from HuggingFace.
-    Models download to ~/.cache/huggingface on first use, reused after.
+    Models download to ~/.cache/huggingface on first use, then reused.
 
     Append ":bnb4" to model_id for 4-bit quantization, e.g.:
-        "Qwen/Qwen2.5-3B-Instruct:bnb4"
-        "mistralai/Mistral-7B-Instruct-v0.3:bnb4"
+        "Qwen/Qwen2.5-7B-Instruct:bnb4"          -- recommended for RTX 3090
+        "mistralai/Mistral-7B-Instruct-v0.3:bnb4" -- alternative
     """
-    from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import (pipeline, AutoModelForCausalLM,
+                              AutoTokenizer, BitsAndBytesConfig, GenerationConfig)
+    import logging
+    logging.getLogger("transformers.generation.utils").setLevel(logging.ERROR)
 
     use_gpu = torch.cuda.is_available()
 
@@ -79,7 +98,7 @@ def load_generator(model_id: str):
     if model_id.endswith(":bnb4"):
         real_id = model_id[:-5]
         try:
-            print(f"Loading {real_id} (4-bit bnb) on GPU...")
+            print(f"Loading {real_id} (4-bit bitsandbytes) on GPU...")
             print("    (downloaded once to ~/.cache/huggingface)")
             bnb_cfg = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -101,7 +120,7 @@ def load_generator(model_id: str):
             model_id = real_id
 
     device = 0 if use_gpu else -1
-    dtype = torch.float16 if use_gpu else torch.float32
+    dtype  = torch.float16 if use_gpu else torch.float32
     print(f"Loading {model_id} on {'GPU' if use_gpu else 'CPU'}...")
     print("    (downloaded once to ~/.cache/huggingface)")
     pipe = pipeline(
@@ -111,23 +130,26 @@ def load_generator(model_id: str):
         dtype=dtype,
         trust_remote_code=True,
     )
-    # Some models (e.g. Qwen) ship with max_length=20 in generation_config.json.
-    # Clear it so it doesn't conflict with our max_new_tokens calls.
-    if hasattr(pipe.model, "generation_config"):
-        pipe.model.generation_config.max_length = None
+    # Overwrite stored generation_config to avoid max_length conflicts from
+    # some model repos that ship a generation_config.json with max_length=20.
+    pipe.model.generation_config = GenerationConfig(
+        max_length=None,
+        do_sample=True,
+        temperature=0.7,
+        top_p=0.9,
+    )
     return pipe
 
 
 def call_generator(prompt: str, max_new_tokens: int = 512) -> Optional[str]:
-    """Run the loaded pipeline on a prompt. Returns generated text or None."""
+    """Run the loaded pipeline on a prompt.  Returns generated text or None."""
     global _pipeline
     if _pipeline is None:
-        raise RuntimeError("call load_generator() before call_generator()")
+        raise RuntimeError("Call load_generator() before call_generator().")
     try:
         result = _pipeline(
             prompt,
             max_new_tokens=max_new_tokens,
-            max_length=None,
             do_sample=True,
             temperature=0.7,
             top_p=0.9,
@@ -231,7 +253,7 @@ def extract_json(text: str) -> Optional[dict | list]:
     # Strategy 3: find first { or [
     for start_char, end_char in [('{', '}'), ('[', ']')]:
         start = text.find(start_char)
-        end = text.rfind(end_char)
+        end   = text.rfind(end_char)
         if start != -1 and end > start:
             try:
                 return json.loads(text[start:end + 1])
@@ -242,7 +264,7 @@ def extract_json(text: str) -> Optional[dict | list]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Format functions (unchanged from original data_generation.py)
+# Format functions
 # ─────────────────────────────────────────────────────────────────────────────
 
 def format_explanation_example(request: str, explanation: str, context: str = "") -> str:
@@ -292,6 +314,20 @@ def generate_all_modes_local(
     n_quiz_gen: int = 1,
     save_every: int = 20,
 ):
+    """
+    Generate training examples from course material chunks.
+
+    For each chunk this produces (up to):
+      - n_qa        QA pairs
+      - n_explain   explanation examples
+      - n_review    answer-review examples
+      - n_quiz_gen  quiz generation examples
+
+    Supports resuming: if output_jsonl_path already exists, already-processed
+    chunk sources are skipped.
+
+    The output JSONL is consumed by dataset.py's load_local_generated_data().
+    """
     global _pipeline
 
     with open(chunks_json_path, encoding="utf-8") as f:
@@ -302,7 +338,7 @@ def generate_all_modes_local(
 
     # Resume: skip chunks we've already processed
     results = []
-    processed_sources = set()
+    processed_sources: set = set()
     if output_path.exists():
         with open(output_path, encoding="utf-8") as f:
             for line in f:
@@ -313,7 +349,7 @@ def generate_all_modes_local(
                     processed_sources.add(ex.get("source", ""))
         print(f"Resuming: {len(results)} existing examples loaded")
 
-    selected = random.sample(chunks, min(max_chunks, len(chunks)))
+    selected  = random.sample(chunks, min(max_chunks, len(chunks)))
     remaining = [c for c in selected if c.get("source", "") not in processed_sources]
     print(f"Processing {len(remaining)} chunks "
           f"(skipping {len(selected) - len(remaining)} already done)")
@@ -324,16 +360,16 @@ def generate_all_modes_local(
     skipped = 0
 
     for i, chunk in enumerate(remaining):
-        text = chunk["text"][:700]
+        text       = chunk["text"][:700]
         breadcrumb = chunk.get("metadata", {}).get("breadcrumb", "")
-        source = chunk.get("source", f"chunk_{i}")
-        topic = breadcrumb or "the material"
+        source     = chunk.get("source", f"chunk_{i}")
+        topic      = breadcrumb or "the material"
 
-        print(f"  [{i+1}/{len(remaining)}] {topic[:55]}")
+        print(f"  [{i+1}/{len(remaining)}] {topic[:110]}")
         t0 = time.time()
 
-        # ── QA pairs ──────────────────────────────────────────────────────
-        raw = call_generator(QA_PROMPT.format(text=text, n=n_qa))
+        # ── QA pairs ──────────────────────────────────────────────────────────
+        raw  = call_generator(QA_PROMPT.format(text=text, n=n_qa))
         data = extract_json(raw)
         if data:
             pairs = data if isinstance(data, list) else data.get("pairs", data.get("questions", []))
@@ -343,55 +379,55 @@ def generate_all_modes_local(
                     a = str(pair["answer"]).strip()
                     if len(q) > 10 and len(a) > 10:
                         results.append({
-                            "type": "qa",
-                            "text": format_qa_example(q, a, context=text[:300]),
+                            "type":     "qa",
+                            "text":     format_qa_example(q, a, context=text[:300]),
                             "question": q, "answer": a,
-                            "source": source, "topic": topic,
+                            "source":   source, "topic": topic,
                         })
 
-        # ── Explanation ───────────────────────────────────────────────────
-        raw = call_generator(EXPLAIN_PROMPT.format(text=text))
+        # ── Explanation ───────────────────────────────────────────────────────
+        raw  = call_generator(EXPLAIN_PROMPT.format(text=text))
         data = extract_json(raw)
         if data and "request" in data and "explanation" in data:
             req = str(data["request"]).strip()
             exp = str(data["explanation"]).strip()
             if len(req) > 10 and len(exp) > 30:
                 results.append({
-                    "type": "explanation",
-                    "text": format_explanation_example(req, exp, context=text[:300]),
-                    "request": req, "explanation": exp,
-                    "source": source, "topic": topic,
+                    "type":        "explanation",
+                    "text":        format_explanation_example(req, exp, context=text[:300]),
+                    "request":     req, "explanation": exp,
+                    "source":      source, "topic": topic,
                 })
         else:
             skipped += 1
 
-        # ── Answer review ─────────────────────────────────────────────────
-        raw = call_generator(ANSWER_REVIEW_PROMPT.format(text=text))
+        # ── Answer review ─────────────────────────────────────────────────────
+        raw  = call_generator(ANSWER_REVIEW_PROMPT.format(text=text))
         data = extract_json(raw)
         if data and all(k in data for k in ["question", "student_answer", "review"]):
-            review = data["review"]
+            review   = data["review"]
             feedback = str(review.get("feedback", "")).strip()
             if feedback and len(feedback) > 20:
                 review_text = f"Score: {review.get('score', '?')}/5. {feedback}"
                 results.append({
-                    "type": "review",
-                    "text": format_review_example(
-                        str(data["question"]).strip(),
-                        str(data["student_answer"]).strip(),
-                        review_text,
-                        context=text[:300],
-                    ),
-                    "question": str(data["question"]).strip(),
+                    "type":           "review",
+                    "text":           format_review_example(
+                                          str(data["question"]).strip(),
+                                          str(data["student_answer"]).strip(),
+                                          review_text,
+                                          context=text[:300],
+                                      ),
+                    "question":       str(data["question"]).strip(),
                     "student_answer": str(data["student_answer"]).strip(),
-                    "review": review_text,
-                    "reference": str(data.get("reference_answer", "")).strip(),
-                    "source": source, "topic": topic,
+                    "review":         review_text,
+                    "reference":      str(data.get("reference_answer", "")).strip(),
+                    "source":         source, "topic": topic,
                 })
         else:
             skipped += 1
 
-        # ── Quiz generation ───────────────────────────────────────────────
-        raw = call_generator(QUIZ_GENERATION_PROMPT.format(text=text))
+        # ── Quiz generation ───────────────────────────────────────────────────
+        raw  = call_generator(QUIZ_GENERATION_PROMPT.format(text=text))
         data = extract_json(raw)
         if data and "generate_request" in data and "quiz_output" in data:
             quiz = data["quiz_output"]
@@ -399,22 +435,22 @@ def generate_all_modes_local(
                     and len(quiz["options"]) >= 2
                     and "question" in quiz):
                 # Shuffle so correct answer isn't always index 0 at inference
-                correct_answer = quiz["options"][quiz.get("correct_index", 0)]
-                opts = quiz["options"][:]
+                correct_answer  = quiz["options"][quiz.get("correct_index", 0)]
+                opts            = quiz["options"][:]
                 random.shuffle(opts)
-                quiz["options"] = opts
-                quiz["correct_index"] = opts.index(correct_answer)
+                quiz["options"]        = opts
+                quiz["correct_index"]  = opts.index(correct_answer)
 
                 results.append({
-                    "type": "quiz_gen",
-                    "text": format_quiz_example(
-                        str(data["generate_request"]).strip(),
-                        quiz,
-                        context=text[:300],
-                    ),
+                    "type":             "quiz_gen",
+                    "text":             format_quiz_example(
+                                            str(data["generate_request"]).strip(),
+                                            quiz,
+                                            context=text[:300],
+                                        ),
                     "generate_request": str(data["generate_request"]).strip(),
-                    "quiz_output": quiz,
-                    "source": source, "topic": topic,
+                    "quiz_output":      quiz,
+                    "source":           source, "topic": topic,
                 })
         else:
             skipped += 1
@@ -451,6 +487,7 @@ def _save(results: list, path: Path):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def validate_dataset(jsonl_path: str):
+    """Print a summary and random samples from a generated JSONL file."""
     by_type: dict = {}
     with open(jsonl_path, encoding="utf-8") as f:
         for line in f:
@@ -471,24 +508,44 @@ def validate_dataset(jsonl_path: str):
 
 if __name__ == "__main__":
     use_gpu = torch.cuda.is_available()
-    default_model = GPU_MODEL if use_gpu else CPU_MODEL
+
+    # Auto-select a sensible default: GPU → laptop model, CPU → cpu model.
+    # Pass --model explicitly to use the 3090 high-quality model.
+    default_model = LAPTOP_GPU_MODEL if use_gpu else CPU_MODEL
 
     parser = argparse.ArgumentParser(
-        description="Generate training data using a local HuggingFace model"
+        description="Generate training data using a local HuggingFace model",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+Model presets (pass to --model):
+  CPU / slow machine : {CPU_MODEL}
+  Laptop GPU         : {LAPTOP_GPU_MODEL}   (default when GPU detected)
+  RTX 3090 fp16      : {HIGHEND_GPU_MODEL}
+  RTX 3090 4-bit     : {HIGHEND_GPU_MODEL}:bnb4  (needs bitsandbytes)
+        """,
     )
-    parser.add_argument("--chunks",     default="chunks.json")
-    parser.add_argument("--output",     default="data/train.jsonl")
-    parser.add_argument("--model",      default=default_model,
+    parser.add_argument("--chunks",      default="../rag/rag_index/chunks.json",
+                        help="Path to chunks.json from your chunker")
+    parser.add_argument("--output",      default="data/train.jsonl",
+                        help="Output JSONL path (also used as resume checkpoint)")
+    parser.add_argument("--model",       default=default_model,
                         help="HuggingFace model ID, optionally with :bnb4 suffix")
-    parser.add_argument("--max-chunks", type=int, default=200)
-    parser.add_argument("--n-qa",       type=int, default=3)
-    parser.add_argument("--n-explain",  type=int, default=1)
-    parser.add_argument("--n-review",   type=int, default=1)
-    parser.add_argument("--n-quiz",     type=int, default=1)
-    parser.add_argument("--validate",   action="store_true")
+    parser.add_argument("--max-chunks",  type=int, default=200,
+                        help="Max number of chunks to process")
+    parser.add_argument("--n-qa",        type=int, default=3,
+                        help="QA pairs per chunk")
+    parser.add_argument("--n-explain",   type=int, default=1,
+                        help="Explanation examples per chunk")
+    parser.add_argument("--n-review",    type=int, default=1,
+                        help="Answer-review examples per chunk")
+    parser.add_argument("--n-quiz",      type=int, default=1,
+                        help="Quiz generation examples per chunk")
+    parser.add_argument("--validate",    action="store_true",
+                        help="Validate and preview an existing output file instead of generating")
     args = parser.parse_args()
 
-    print(f"Device: {'GPU (CUDA)' if use_gpu else 'CPU'}  →  model: {args.model}")
+    print(f"Device : {'GPU (CUDA)' if use_gpu else 'CPU'}")
+    print(f"Model  : {args.model}")
 
     if args.validate:
         validate_dataset(args.output)

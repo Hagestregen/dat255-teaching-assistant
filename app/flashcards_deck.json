@@ -1,0 +1,14 @@
+[
+  {
+    "front": "Model Development Recap",
+    "back": "Remember, model development is just the beginning. Understanding the full lifecycle, from data preparation to deployment, is crucial for successful machine learning projects.",
+    "topic": "Building your model",
+    "source_chunk": "[Deep Learning with Python, Third Edition > Deploying your model > Maintaining your model]\nThis concludes the universal workflow of machine learning — that’s a lot of things to keep in mind. It takes time and experience to become an expert, but don’t worry, you’re already a lot wiser than you were a few chapters ago. You are now familiar with the big picture — the entire spectrum of what machine learning projects entail. While most of this book will focus on the model development part, you’re now aware that it’s only one part of the entire workflow. Always keep in mind the big picture!\n---\n[De"
+  },
+  {
+    "front": "ConvNets build object representations",
+    "back": "In ConvNets, features from earlier layers detect simple shapes, while deeper layers form complex object representations. Lateral connections enhance this by integrating lower-level and higher-level features.",
+    "topic": "ConvNets",
+    "source_chunk": "[Deep Learning with Python, Third Edition > Using a pretrained RetinaNet detector]\ndifferent types of simple features like edges and curves, but only later in the\nConvNet layers do we start building latent representations for entire objects.  \nThe solution used by RetinaNet is called a feature pyramid network. The final\nfeatures from the ConvNet base model are upsampled with progressive\n`Conv2DTranspose`  \nlayers, just like we saw in the previous chapter. But critically, we also\ninclude *lateral connections* where we sum these upsampled feature maps with the\nfeature maps of the same size from "
+  }
+]

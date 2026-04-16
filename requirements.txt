@@ -39,6 +39,14 @@ bs4
 moviepy         # for mp4 to mp3 conversion (audio extraction)
 faster-whisper  # for transcription of audio to text
 
+# Teaching assistant model libraries
+gradio
+bitsandbytes>=0.43.0
+accelerate>=0.27.0   # needed by device_map="auto"
+
+## extra model libraries
+# wandb # for logging
+
 # Other libraries
 tiktoken        # for tokenization
 

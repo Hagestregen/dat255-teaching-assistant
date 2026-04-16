@@ -1,6 +1,10 @@
 """
-dataset.py  —  Data pipeline: HuggingFace QA datasets → instruction-tuning format
-===================================================================================
+dataset.py  —  Data pipeline for training and inference
+========================================================
+Provides the three symbols consumed by train.py:
+
+    from dataset import Tokenizer, build_datasets, make_dataloader
+
 KEY CONCEPT: How do you teach a model to answer questions?
 ──────────────────────────────────────────────────────────
 Your curriculum PDFs are PLAIN TEXT. They're not in question-answer format.
@@ -17,17 +21,19 @@ You have two separate roles for data:
      At inference, relevant chunks are retrieved and prepended to the prompt as context.
      The model DOES NOT need to memorize the lectures — it reads them at inference time.
 
-So the training only needs to happen once on generic ML QA data.
-The curriculum knowledge is always available via RAG.
+  3. LOCALLY GENERATED DATA (from data_generation.py) → enriches fine-tuning
+     Run data_generation.py once to produce a JSONL file with explanation, review,
+     quiz, and QA examples generated from your course material.  Pass its path as
+     synthetic_jsonl_path to build_datasets().
 
 Why compute loss only on the Answer part?
 ─────────────────────────────────────────
 During training we use teacher forcing: we feed in the full string and predict
-the next token at every position. But we only want the model to improve at
+the next token at every position.  But we only want the model to improve at
 generating *answers*, not at re-generating the question it was already given.
 
 We achieve this by setting the target token IDs to -1 for every position that
-is part of the prompt (the "Question: ..." prefix). PyTorch's cross_entropy
+is part of the prompt (the "Question: ..." prefix).  PyTorch's cross_entropy
 with ignore_index=-1 simply doesn't count those positions in the loss.
 
   Input:   "Question: What is X?\nAnswer: X is Y<|endoftext|>"
@@ -96,28 +102,57 @@ def normalize_example(example: Dict) -> Optional[Dict]:
     Convert a raw example from ANY source into our unified schema:
       {"question": str, "answer": str, "source": str}
 
-    Different HuggingFace datasets have different field names. We handle
-    the two you're using and your synthetic data here.
+    Handles:
+      - HuggingFace datasets (prsdm, win-wang, SQuAD-style)
+      - Examples generated locally by data_generation.py
+        (types: "qa", "explanation", "review", "quiz_gen")
 
     Returns None if the example is unusable (empty fields, too short, etc.)
     """
     q = a = None
 
-    # prsdm/Machine-Learning-QA-dataset schema
-    if "question" in example and "answer" in example:
+    ex_type = example.get("type", "")
+
+    # ── locally-generated formats (from data_generation.py) ──────────────────
+
+    if ex_type == "qa":
         q = str(example.get("question", "")).strip()
         a = str(example.get("answer", "")).strip()
 
-    # win-wang/Machine_Learning_QA_Collection schema
-    elif "Question" in example and "Answer" in example:
-        q = str(example.get("Question", "")).strip()
-        a = str(example.get("Answer", "")).strip()
+    elif ex_type == "explanation":
+        q = str(example.get("request", "")).strip()
+        a = str(example.get("explanation", "")).strip()
 
-    # SQuAD-style (has 'answers' as a dict with 'text' list)
+    elif ex_type == "review":
+        # Combine question + student answer into the "question" side so the
+        # model learns to produce a review given both.
+        question     = str(example.get("question",       "")).strip()
+        student_ans  = str(example.get("student_answer", "")).strip()
+        q = f"{question}\nStudent answer: {student_ans}"
+        a = str(example.get("review", "")).strip()
+
+    elif ex_type == "quiz_gen":
+        q = str(example.get("generate_request", "")).strip()
+        quiz = example.get("quiz_output", {})
+        a = json.dumps(quiz, ensure_ascii=False) if isinstance(quiz, dict) else str(quiz)
+
+    # ── HuggingFace dataset formats ───────────────────────────────────────────
+
+    elif "question" in example and "answer" in example:
+        # prsdm/Machine-Learning-QA-dataset schema
+        q = str(example.get("question", "")).strip()
+        a = str(example.get("answer",   "")).strip()
+
+    elif "Question" in example and "Answer" in example:
+        # win-wang/Machine_Learning_QA_Collection schema
+        q = str(example.get("Question", "")).strip()
+        a = str(example.get("Answer",   "")).strip()
+
     elif "question" in example and "answers" in example:
+        # SQuAD-style (has 'answers' as a dict with 'text' list)
         q = str(example.get("question", "")).strip()
         answers = example.get("answers", {})
-        texts = answers.get("text", [])
+        texts   = answers.get("text", [])
         a = str(texts[0]).strip() if texts else ""
 
     if not q or not a or len(q) < 10 or len(a) < 5:
@@ -125,8 +160,8 @@ def normalize_example(example: Dict) -> Optional[Dict]:
 
     return {
         "question": q,
-        "answer": a,
-        "source": example.get("source", "unknown"),
+        "answer":   a,
+        "source":   example.get("source", "unknown"),
     }
 
 
@@ -147,13 +182,15 @@ def format_rag_prompt(context: str, question: str) -> str:
     """
     Format a prompt that includes RAG-retrieved context.
 
-    At inference with RAG, we prepend the retrieved chunks. The model
+    At inference with RAG, we prepend the retrieved chunks.  The model
     has NOT seen this exact format during training (unless you create synthetic
     RAG examples), but because it's trained to "Answer:" completions and the
     context clearly contains the answer, it will use it.
 
     For best results: also fine-tune on some context-question-answer triples
-    where the answer is extractable from the context. See generate_synthetic_qa().
+    where the answer is extractable from the context.  data_generation.py
+    already emits examples with a "Context:" prefix — those train this
+    naturally.
     """
     return f"Context: {context}\n\nQuestion: {question}\nAnswer:"
 
@@ -172,8 +209,8 @@ class QADataset(Dataset):
 
     Why is the label for the prompt -1?
     The model shouldn't waste capacity learning to predict the question tokens —
-    it was already GIVEN the question. We only want it to learn to predict the
-    answer. This is called "loss masking" and is standard for instruction tuning.
+    it was already GIVEN the question.  We only want it to learn to predict the
+    answer.  This is called "loss masking" and is standard for instruction tuning.
     """
 
     def __init__(
@@ -267,6 +304,7 @@ def load_huggingface_datasets(max_examples: int = 5000) -> List[Dict]:
     n_before = len(examples)
     print("Loading win-wang/Machine_Learning_QA_Collection...")
     try:
+        from datasets import load_dataset
         ds2 = load_dataset("win-wang/Machine_Learning_QA_Collection", split="train")
         for ex in list(ds2)[:max_examples]:
             norm = normalize_example({**ex, "source": "winwang_ml_qa"})
@@ -281,109 +319,45 @@ def load_huggingface_datasets(max_examples: int = 5000) -> List[Dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 5: Synthetic QA generation from course material
+# SECTION 5: Loading locally generated data (from data_generation.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def generate_synthetic_qa(
-    chunks_json_path: str,
-    output_jsonl_path: str,
-    api_key: str,
-    model: str = "gpt-4o-mini",  # cheap and fast for data generation
-    max_chunks: int = 200,
-    qa_per_chunk: int = 3,
-):
+def load_local_generated_data(jsonl_path: str) -> List[Dict]:
     """
-    Use GPT to generate QA pairs FROM YOUR COURSE MATERIAL.
+    Load training examples produced by data_generation.py.
 
-    This is the bridge between your curriculum and the model's training data.
-    For each chunk of lecture text, GPT generates realistic exam-style questions
-    that a student might ask, along with answers grounded in that chunk.
+    The JSONL file contains entries with types: "qa", "explanation",
+    "review", "quiz_gen".  Each is normalized into {"question", "answer",
+    "source"} so QADataset can process them uniformly.
 
-    The result: your model has seen examples of answering DAT255-specific questions
-    during training, not just generic ML questions.
+    Run data_generation.py once to build this file — you don't need to
+    regenerate it every training run.
 
-    Run this ONCE and save the results — don't regenerate every training run.
-
-    Output format (JSONL, one JSON per line):
-      {"question": "...", "answer": "...", "source": "synthetic_dat255", "context": "..."}
-
-    The "context" field lets you also train on context-grounded answers
-    (for better RAG integration).
+    Example:
+        python data_generation.py --chunks ../rag/rag_index/chunks.json \\
+            --output data/train.jsonl --model Qwen/Qwen2.5-7B-Instruct
     """
-    import openai
-    import json
-
-    client = openai.OpenAI(api_key=api_key)
-
-    # Load the chunks produced by your chunker.py
-    with open(chunks_json_path) as f:
-        chunks = json.load(f)
-
-    # Sample a subset (generating for all chunks can be expensive)
-    selected = random.sample(chunks, min(max_chunks, len(chunks)))
-
-    prompt_template = """
-You are creating a study dataset for a machine learning course.
-Given the following lecture text, generate {n} question-answer pairs.
-
-Rules:
-- Questions should be conceptual, not trivial (e.g., "What is X and why is it used?")
-- Answers should be 2-4 sentences, grounded strictly in the provided text
-- Format each pair EXACTLY as JSON: {{"question": "...", "answer": "..."}}
-- Output a JSON array of {n} objects, nothing else
-
-Lecture text:
-{text}
-"""
-
     results = []
-    for i, chunk in enumerate(selected):
-        text = chunk["text"][:800]  # truncate very long chunks
-        prompt = prompt_template.format(n=qa_per_chunk, text=text)
+    path = Path(jsonl_path)
+    if not path.exists():
+        print(f"  [dataset] {jsonl_path} not found — skipping local data.")
+        return results
 
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=800,
-            )
-            content = response.choices[0].message.content.strip()
-
-            # Parse the JSON array
-            qa_pairs = json.loads(content)
-            for pair in qa_pairs:
-                if "question" in pair and "answer" in pair:
-                    results.append({
-                        "question": pair["question"],
-                        "answer":   pair["answer"],
-                        "source":   "synthetic_dat255",
-                        "context":  text,  # keep for RAG-style training
-                    })
-        except Exception as e:
-            print(f"  Chunk {i}: failed ({e})")
-
-        if (i + 1) % 10 == 0:
-            print(f"  Processed {i+1}/{len(selected)} chunks, {len(results)} pairs so far")
-
-    # Save as JSONL
-    with open(output_jsonl_path, "w") as f:
-        for item in results:
-            f.write(json.dumps(item) + "\n")
-
-    print(f"Saved {len(results)} synthetic QA pairs to {output_jsonl_path}")
-    return results
-
-
-def load_synthetic_qa(jsonl_path: str) -> List[Dict]:
-    """Load previously generated synthetic QA pairs."""
-    results = []
-    with open(jsonl_path) as f:
+    by_type: dict = {}
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line:
-                results.append(json.loads(line))
-    print(f"Loaded {len(results)} synthetic QA examples from {jsonl_path}")
+            if not line:
+                continue
+            raw  = json.loads(line)
+            norm = normalize_example({**raw, "source": raw.get("source", "local_generated")})
+            if norm:
+                results.append(norm)
+                by_type[raw.get("type", "unknown")] = by_type.get(raw.get("type", "unknown"), 0) + 1
+
+    print(f"Loaded {len(results)} local generated examples from {jsonl_path}")
+    for t, n in sorted(by_type.items()):
+        print(f"  {t:12s}  {n:5d}")
     return results
 
 
@@ -392,8 +366,8 @@ def load_synthetic_qa(jsonl_path: str) -> List[Dict]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_datasets(
-    chunks_json_path: str = None,
     synthetic_jsonl_path: str = None,
+    chunks_json_path: str = None,   # kept for API compatibility, not used directly
     tokenizer: Tokenizer = None,
     max_length: int = 512,
     val_frac: float = 0.05,
@@ -403,9 +377,16 @@ def build_datasets(
     """
     Assemble all data sources and split into train/val/test.
 
-    IMPORTANT: We keep DAT255-specific (synthetic) data in TEST to measure
-    how well the model actually performs on course material. This tests
-    real-world utility, not just generic QA performance.
+    Data sources (in priority order):
+      1. HuggingFace ML QA datasets  — general question-answering ability
+      2. Locally generated data       — course-specific, from data_generation.py
+
+    Pass synthetic_jsonl_path to include locally generated data.  This is the
+    JSONL file produced by data_generation.py (e.g. "data/train.jsonl").
+
+    IMPORTANT: We keep course-specific data in TEST to measure how well the
+    model actually performs on your curriculum.  This tests real-world utility,
+    not just generic QA performance.
 
     Returns: (train_dataset, val_dataset, test_dataset)
     """
@@ -414,30 +395,30 @@ def build_datasets(
         tokenizer = Tokenizer()
 
     # Load all sources
-    general_examples  = load_huggingface_datasets()
-    dat255_examples   = []
+    general_examples = load_huggingface_datasets()
+    course_examples  = []
 
-    if synthetic_jsonl_path and Path(synthetic_jsonl_path).exists():
-        dat255_examples = load_synthetic_qa(synthetic_jsonl_path)
+    if synthetic_jsonl_path:
+        course_examples = load_local_generated_data(synthetic_jsonl_path)
     elif chunks_json_path:
-        print("No synthetic QA found. Run generate_synthetic_qa() first.")
+        print("No local generated data found. Run data_generation.py first.")
 
     # Shuffle general examples
     random.shuffle(general_examples)
 
-    # Split: dat255-specific → test (real-world evaluation)
-    #        general → train/val
+    # Split: course-specific → test (real-world evaluation)
+    #        general          → train/val
     n_val  = int(len(general_examples) * val_frac)
     n_test = int(len(general_examples) * test_frac)
 
-    test_examples  = dat255_examples + general_examples[:n_test]
+    test_examples  = course_examples + general_examples[:n_test]
     val_examples   = general_examples[n_test: n_test + n_val]
     train_examples = general_examples[n_test + n_val:]
 
     print(f"\nDataset split:")
     print(f"  Train: {len(train_examples)} examples")
     print(f"  Val:   {len(val_examples)} examples")
-    print(f"  Test:  {len(test_examples)} examples ({len(dat255_examples)} DAT255-specific)")
+    print(f"  Test:  {len(test_examples)} examples ({len(course_examples)} course-specific)")
 
     train_ds = QADataset(train_examples, tokenizer, max_length)
     val_ds   = QADataset(val_examples,   tokenizer, max_length)
