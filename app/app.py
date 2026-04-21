@@ -1,43 +1,24 @@
+# app.py
 """
-gradio_app.py  —  Gradio web interface for the Teaching Assistant
-==================================================================
-Five tabs:
-  1. 💬 Ask a question   — RAG-assisted answer, shows retrieved sources
-  2. 🧠 Quiz me          — multiple-choice questions, optional chapter filter
-  3. 📝 Practice answer  — assistant generates a question; you answer; it grades you
-  4. 🗂️ Flashcards       — Generate tab + My Deck tab
-  5. 📊 Progress         — curriculum coverage dashboard (tracking mode only)
+Gradio teaching assistant.
 
-TWO MODES:
-──────────
-  Random mode (default):
-    Questions are drawn from random topics across the whole index.
-    No history is saved.  Useful for free-form exploration.
+Tabs:
+  1. Ask          — RAG-assisted free-form Q&A
+  2. Quiz         — multiple-choice questions
+  3. Practice     — long-answer with scoring feedback
+  4. Flashcards   — generate + deck browser
+  5. Progress     — curriculum coverage dashboard (tracking mode only)
 
-  Tracking mode (--track):
-    Questions are drawn using a priority score: unseen material first, then
-    lowest-accuracy topics, with a recency bonus so old correct answers
-    resurface over time.  Performance is saved to progress.json.
-    The Progress tab shows your coverage dashboard.
-
-    Requires --chunks (path to chunks.json from your chunker).
-    Defaults to {--index}/chunks.json if not set.
-
-Run examples
-────────────
+Run:
   # Random mode (no tracking):
-  python gradio_app.py --pretrained qwen-3b --index ../rag/rag_index
+  python app.py --pretrained qwen-3b
 
   # Tracking mode:
-  python gradio_app.py --pretrained qwen-3b --index ../rag/rag_index --track
+  python app.py --pretrained qwen-3b --index ../rag/rag_index --track
 
-  # Tracking mode with explicit paths:
-  python gradio_app.py --pretrained qwen-3b --index ../rag/rag_index \\
+  # Explicit chunks path:
+  python app.py --pretrained qwen-3b --index ../rag/rag_index \\
       --track --chunks ../rag/rag_index/chunks.json --progress my_progress.json
-
-  # Custom checkpoint + tracking:
-  python gradio_app.py --checkpoint ../model/checkpoints/step_005000.pt \\
-      --index ../rag/rag_index --track
 """
 
 import argparse
@@ -51,21 +32,22 @@ if str(_PROJECT_ROOT) not in sys.path:
 import gradio as gr
 import torch
 
+from topic_tree import TopicTree, natural_sort
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Global state  (loaded once at startup)
-# ─────────────────────────────────────────────────────────────────────────────
+
+# =============================================================================
+# Global state
+# =============================================================================
 
 _pipeline        = None   # custom RAGPipeline (checkpoint mode)
 _pretrained_pipe = None   # HuggingFace text-generation pipeline
 _retriever       = None   # standalone Retriever (pretrained mode)
+_tracker         = None   # ProgressTracker — None when tracking is off
+_topic_tree      = None   # TopicTree — built from chunks.json when available
 
-_tracker         = None   # ProgressTracker — None when tracking is disabled
-
-# Per-question state used for result recording
 _current_quiz:          object = None
-_current_quiz_chunk_id: int    = None   # chunk_id for this quiz question (tracking)
-_current_fb_chunk_id:   int    = None   # chunk_id for current practice question (tracking)
+_current_quiz_chunk_id: int    = None
+_current_fb_chunk_id:   int    = None
 
 
 def _active_retriever():
@@ -74,18 +56,18 @@ def _active_retriever():
     return _retriever
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Model loading
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Model / retriever loading
+# =============================================================================
 
-def load_pipeline(checkpoint: str, index_dir: str):
+def load_pipeline(checkpoint: str, index_dir: str) -> None:
     global _pipeline
     from rag_pipeline import RAGPipeline
     _pipeline = RAGPipeline(checkpoint, index_dir, top_k=3)
     print("Custom pipeline loaded.")
 
 
-def load_retriever(index_dir: str):
+def load_retriever(index_dir: str) -> None:
     global _retriever
     from rag.retriever import Retriever
     _retriever = Retriever(index_dir)
@@ -100,14 +82,7 @@ PRETRAINED_MODELS = {
 }
 
 
-def _clear_generation_config(pipe):
-    try:
-        pipe.model.generation_config.max_length = None
-    except Exception as e:
-        print(f"  [WARN] Could not clear generation_config.max_length: {e}")
-
-
-def load_pretrained(model_key_or_id: str):
+def load_pretrained(model_key_or_id: str) -> None:
     global _pretrained_pipe
     from transformers import (pipeline, AutoModelForCausalLM, AutoTokenizer,
                                BitsAndBytesConfig)
@@ -118,7 +93,7 @@ def load_pretrained(model_key_or_id: str):
     if model_id.endswith(":bnb4"):
         real_id = model_id[:-5]
         try:
-            print(f"Loading {real_id} (4-bit) ...")
+            print(f"Loading {real_id} (4-bit)...")
             bnb_cfg   = BitsAndBytesConfig(load_in_4bit=True,
                                            bnb_4bit_compute_dtype=torch.float16)
             tokenizer = AutoTokenizer.from_pretrained(real_id)
@@ -129,12 +104,12 @@ def load_pretrained(model_key_or_id: str):
             print("Pretrained pipeline loaded (4-bit).")
             return
         except ImportError:
-            print("  [WARN] bitsandbytes not installed -- falling back to fp16")
+            print("[WARN] bitsandbytes not installed, falling back to fp16")
             model_id = real_id
 
     device = 0 if use_gpu else -1
     dtype  = torch.float16 if use_gpu else torch.float32
-    print(f"Loading {model_id} on {'GPU' if use_gpu else 'CPU'} ...")
+    print(f"Loading {model_id} on {'GPU' if use_gpu else 'CPU'}...")
     _pretrained_pipe = pipeline(
         "text-generation", model=model_id,
         device=device, torch_dtype=dtype, trust_remote_code=True,
@@ -143,9 +118,75 @@ def load_pretrained(model_key_or_id: str):
     print("Pretrained pipeline loaded.")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Tab 1: Ask a question
-# ─────────────────────────────────────────────────────────────────────────────
+def _clear_generation_config(pipe) -> None:
+    try:
+        pipe.model.generation_config.max_length = None
+    except Exception as e:
+        print(f"[WARN] Could not clear generation_config.max_length: {e}")
+
+
+# =============================================================================
+# Topic picker helpers
+# =============================================================================
+
+def _resolve_filter(source: str, chapter: str, section: str, topic_text: str):
+    """
+    Resolve the three-level picker + optional text override into a filter.
+
+    Text override takes precedence over the picker.
+    Returns (breadcrumb_prefix_or_None, topic_text_or_None).
+    """
+    if topic_text.strip():
+        return None, topic_text.strip()
+    if _topic_tree is None:
+        return None, None
+    prefix = _topic_tree.breadcrumb_prefix(source, chapter, section)
+    return (prefix or None), None
+
+
+def _on_source_change(source_val: str):
+    """Update chapter and section dropdowns when the source changes."""
+    if not source_val or _topic_tree is None:
+        return (gr.update(choices=[], value=None, visible=False),
+                gr.update(choices=[], value=None, visible=False))
+    chapters = _topic_tree.child_choices(source_val)
+    return (gr.update(choices=chapters, value=None, visible=bool(chapters)),
+            gr.update(choices=[], value=None, visible=False))
+
+
+def _on_chapter_change(source_val: str, chapter_val: str):
+    """Update the section dropdown when a chapter is selected."""
+    if not chapter_val or _topic_tree is None:
+        return gr.update(choices=[], value=None, visible=False)
+    sections = _topic_tree.child_choices(source_val, chapter_val)
+    return gr.update(choices=sections, value=None, visible=bool(sections))
+
+
+def _picker_initial_state() -> tuple[list, str | None, list, list]:
+    """
+    Compute the initial state for a topic picker at build time.
+
+    Returns:
+        (source_choices, default_source, initial_chapters, show_source)
+    """
+    if _topic_tree is None or _topic_tree.is_empty():
+        return [], None, [], False
+
+    sources        = _topic_tree.root_choices()
+    default_source = _topic_tree.single_root()           # non-None when exactly one source
+    show_source    = len(sources) > 1                    # hide when single source
+
+    initial_chapters = (
+        _topic_tree.child_choices(default_source)
+        if default_source else []
+    )
+
+    return sources, default_source, initial_chapters, show_source
+
+
+# =============================================================================
+# Tab 1: Ask
+# =============================================================================
 
 def ask_question(question: str, use_rag: bool, temperature: float):
     if not question.strip():
@@ -172,11 +213,11 @@ def ask_question(question: str, use_rag: bool, temperature: float):
     return result["answer"], sources_md
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Tab 2: Quiz
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
-def new_quiz_question(topic: str, chapter: str):
+def new_quiz_question(topic_text: str, source: str, chapter: str, section: str):
     global _current_quiz, _current_quiz_chunk_id
     retriever = _active_retriever()
     if retriever is None:
@@ -187,26 +228,32 @@ def new_quiz_question(topic: str, chapter: str):
                       generate_quiz_question_with_model)
     from generation import get_random_topic_from_retriever
 
-    # ── Tracking mode: tracker picks the chunk by priority ───────────────────
+    breadcrumb_prefix, topic_override = _resolve_filter(source, chapter, section, topic_text)
+
     if _tracker is not None:
-        filter_chapter = chapter if chapter and chapter != "-- All chapters --" else None
-        filter_topic   = topic.strip() or None
-        result = _tracker.next_chunk(chapter=filter_chapter, topic=filter_topic)
+        result = _tracker.next_chunk(
+            breadcrumb_prefix=breadcrumb_prefix,
+            topic=topic_override,
+        )
         if result is None:
             return ("No chunks found for that filter.", "",
                     gr.update(choices=[]), gr.update(visible=False), "")
-        chunk_id, record = result
-        _current_quiz_chunk_id = chunk_id
-        effective_topic = record.topic
-        status = (f"**{record.breadcrumb}**  |  "
-                  f"seen {record.times_seen}x  |  accuracy {record.accuracy:.0%}")
+        chunk_id, record        = result
+        _current_quiz_chunk_id  = chunk_id
+        effective_topic         = record.topic
+        status = (
+            f"**{record.breadcrumb}**  |  "
+            f"seen {record.times_seen}x  |  accuracy {record.accuracy:.0%}"
+        )
     else:
-        # ── Random mode ───────────────────────────────────────────────────────
         _current_quiz_chunk_id = None
-        effective_topic = topic.strip() if topic.strip() else get_random_topic_from_retriever(retriever)
+        if topic_override:
+            effective_topic = topic_override
+        elif breadcrumb_prefix:
+            effective_topic = breadcrumb_prefix.split(" > ")[-1]
+        else:
+            effective_topic = get_random_topic_from_retriever(retriever)
         status = f"Topic: *{effective_topic}*"
-
-    print(f"Quiz topic: {effective_topic!r}")
 
     if _pretrained_pipe is not None:
         _current_quiz = generate_quiz_question_with_pretrained(
@@ -221,7 +268,7 @@ def new_quiz_question(topic: str, chapter: str):
                 gr.update(choices=[]), gr.update(visible=False), "")
 
     if _current_quiz is None:
-        return ("Failed to generate question -- try a different topic.", "",
+        return ("Failed to generate question — try a different topic.", "",
                 gr.update(choices=[]), gr.update(visible=False), status)
 
     choices = [f"{l}) {o}" for l, o in zip("ABCD", _current_quiz.options)]
@@ -248,40 +295,52 @@ def submit_quiz_answer(selected: str):
         return f"Correct!\n\n{_current_quiz.explanation}"
 
     cl = "ABCD"[_current_quiz.correct_index]
-    return (f"Wrong. The correct answer was {cl}) "
-            f"{_current_quiz.correct_answer}\n\n{_current_quiz.explanation}")
+    return (
+        f"Incorrect. The correct answer was {cl}) "
+        f"{_current_quiz.correct_answer}\n\n{_current_quiz.explanation}"
+    )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Tab 3: Practice answer
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
-def generate_feedback_question(topic: str, chapter: str):
+def generate_feedback_question(topic_text: str, source: str, chapter: str, section: str):
     global _current_fb_chunk_id
     retriever = _active_retriever()
     if retriever is None:
         return (gr.update(value="No retriever loaded.", interactive=False),
                 gr.update(visible=False), gr.update(visible=False), "")
 
-    from feedback_mode import generate_question_for_feedback
+    from feedback import generate_question_for_feedback
+
+    breadcrumb_prefix, topic_override = _resolve_filter(source, chapter, section, topic_text)
 
     if _tracker is not None:
-        filter_chapter = chapter if chapter and chapter != "-- All chapters --" else None
-        filter_topic   = topic.strip() or None
-        result = _tracker.next_chunk(chapter=filter_chapter, topic=filter_topic)
+        result = _tracker.next_chunk(
+            breadcrumb_prefix=breadcrumb_prefix,
+            topic=topic_override,
+        )
         if result:
-            chunk_id, record = result
+            chunk_id, record     = result
             _current_fb_chunk_id = chunk_id
-            effective_topic = record.topic
-            status = (f"**{record.breadcrumb}**  |  "
-                      f"seen {record.times_seen}x  |  accuracy {record.accuracy:.0%}")
+            effective_topic      = record.topic
+            status = (
+                f"**{record.breadcrumb}**  |  "
+                f"seen {record.times_seen}x  |  accuracy {record.accuracy:.0%}"
+            )
         else:
             _current_fb_chunk_id = None
-            effective_topic = topic.strip()
-            status = "No chunks found for that filter."
+            effective_topic      = topic_override or ""
+            status               = "No chunks found for that filter."
     else:
         _current_fb_chunk_id = None
-        effective_topic = topic.strip()
+        if topic_override:
+            effective_topic = topic_override
+        elif breadcrumb_prefix:
+            effective_topic = breadcrumb_prefix.split(" > ")[-1]
+        else:
+            effective_topic = ""
         status = ""
 
     question = generate_question_for_feedback(
@@ -294,9 +353,11 @@ def generate_feedback_question(topic: str, chapter: str):
     )
 
     if not question:
-        return (gr.update(value="Failed to generate a question -- try entering a topic manually.",
-                          interactive=True),
-                gr.update(visible=False), gr.update(visible=False), status)
+        return (
+            gr.update(value="Failed to generate a question — try entering a topic manually.",
+                      interactive=True),
+            gr.update(visible=False), gr.update(visible=False), status,
+        )
 
     return (
         gr.update(value=question, interactive=True),
@@ -314,7 +375,6 @@ def review_student_answer(question: str, student_answer: str):
 
     retriever = _active_retriever()
 
-    # ── Pretrained path ───────────────────────────────────────────────────────
     if _pretrained_pipe is not None:
         context = ""
         if retriever:
@@ -343,8 +403,7 @@ def review_student_answer(question: str, student_answer: str):
         ]
         try:
             result = _pretrained_pipe(messages, max_new_tokens=200, do_sample=True,
-                                      temperature=0.4, top_p=0.9,
-                                      return_full_text=False)
+                                      temperature=0.4, top_p=0.9, return_full_text=False)
             raw = result[0]["generated_text"]
             if isinstance(raw, list):
                 raw = raw[-1].get("content", "")
@@ -356,13 +415,14 @@ def review_student_answer(question: str, student_answer: str):
         _maybe_record_fb(formatted)
         return formatted
 
-    # ── Custom checkpoint path ────────────────────────────────────────────────
     if _pipeline is not None:
-        from feedback_mode import review_answer_with_model, format_review_for_display
+        from feedback import review_answer_with_model, format_review_for_display
         review    = review_answer_with_model(question, student_answer, _pipeline)
-        formatted = format_review_for_display(review, question, student_answer)
+        formatted = format_review_for_display(review)
         if _tracker is not None and _current_fb_chunk_id is not None:
-            _tracker.record(_current_fb_chunk_id, correct=(review.get("score", 0) >= 3))
+            from config import FEEDBACK_PASS_THRESHOLD
+            _tracker.record(_current_fb_chunk_id,
+                            correct=(review.get("score", 0) >= FEEDBACK_PASS_THRESHOLD))
         return formatted
 
     return "No model loaded."
@@ -370,6 +430,7 @@ def review_student_answer(question: str, student_answer: str):
 
 def _format_review(raw: str) -> str:
     import re
+    score, feedback = 0, raw
     m = re.search(r'[Ss]core[:\s]+(\d)[/\s]*5', raw)
     if m:
         score    = int(m.group(1))
@@ -377,24 +438,23 @@ def _format_review(raw: str) -> str:
     elif raw and raw[0].isdigit():
         score    = int(raw[0])
         feedback = raw[1:].strip().lstrip('/5').lstrip('.').strip()
-    else:
-        score, feedback = 0, raw
     stars = "★" * score + "☆" * (5 - score)
     return f"**Score: {score}/5** {stars}\n\n{feedback}"
 
 
-def _maybe_record_fb(formatted_md: str):
+def _maybe_record_fb(formatted_md: str) -> None:
     import re
     if _tracker is None or _current_fb_chunk_id is None:
         return
-    m = re.search(r'Score:\s*(\d)', formatted_md)
+    from config import FEEDBACK_PASS_THRESHOLD
+    m     = re.search(r'Score:\s*(\d)', formatted_md)
     score = int(m.group(1)) if m else 0
-    _tracker.record(_current_fb_chunk_id, correct=(score >= 3))
+    _tracker.record(_current_fb_chunk_id, correct=(score >= FEEDBACK_PASS_THRESHOLD))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Tab 4: Flashcards
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 _flashcard_deck: list = []
 _gen_current_card     = None
@@ -403,13 +463,13 @@ _deck_index:  int     = 0
 _deck_revealed        = False
 
 
-def _sync_deck_from_file():
+def _sync_deck_from_file() -> None:
     global _flashcard_deck
     from flashcard import load_deck
     _flashcard_deck = load_deck()
 
 
-def new_flashcard(topic: str):
+def new_flashcard(topic_text: str, source: str, chapter: str, section: str):
     global _gen_current_card, _gen_revealed
     retriever = _active_retriever()
     if retriever is None:
@@ -417,11 +477,18 @@ def new_flashcard(topic: str):
         return flashcard_to_html(Flashcard("No retriever loaded.", ""), True), gr.update(visible=False), ""
 
     from flashcard import (generate_flashcard_with_pretrained,
-                            generate_flashcard_with_model,
-                            flashcard_to_html, append_card_to_deck, Flashcard)
+                           generate_flashcard_with_model,
+                           flashcard_to_html, append_card_to_deck, Flashcard)
     from generation import get_random_topic_from_retriever
 
-    effective_topic = topic.strip() if topic.strip() else get_random_topic_from_retriever(retriever)
+    breadcrumb_prefix, topic_override = _resolve_filter(source, chapter, section, topic_text)
+
+    if topic_override:
+        effective_topic = topic_override
+    elif breadcrumb_prefix:
+        effective_topic = breadcrumb_prefix.split(" > ")[-1]
+    else:
+        effective_topic = get_random_topic_from_retriever(retriever)
 
     if _pretrained_pipe is not None:
         card = generate_flashcard_with_pretrained(effective_topic, _pretrained_pipe, retriever)
@@ -432,17 +499,21 @@ def new_flashcard(topic: str):
         return flashcard_to_html(Flashcard("No model loaded.", ""), True), gr.update(visible=False), ""
 
     if card is None:
-        return (flashcard_to_html(Flashcard("Failed to generate -- try a different topic.", ""), True),
-                gr.update(visible=False), "")
+        return (
+            flashcard_to_html(Flashcard("Failed to generate — try a different topic.", ""), True),
+            gr.update(visible=False), "",
+        )
 
     append_card_to_deck(card)
     _sync_deck_from_file()
     _gen_current_card = card
     _gen_revealed     = False
 
-    return (flashcard_to_html(card, revealed=False),
-            gr.update(visible=True, value="Flip"),
-            f"Saved to deck ({len(_flashcard_deck)} cards total)")
+    return (
+        flashcard_to_html(card, revealed=False),
+        gr.update(visible=True, value="Flip"),
+        f"Saved to deck ({len(_flashcard_deck)} cards total)",
+    )
 
 
 def flip_gen_card():
@@ -451,8 +522,10 @@ def flip_gen_card():
         return "", gr.update()
     from flashcard import flashcard_to_html
     _gen_revealed = not _gen_revealed
-    return (flashcard_to_html(_gen_current_card, revealed=_gen_revealed),
-            gr.update(value="Hide" if _gen_revealed else "Flip"))
+    return (
+        flashcard_to_html(_gen_current_card, revealed=_gen_revealed),
+        gr.update(value="Hide" if _gen_revealed else "Flip"),
+    )
 
 
 def load_deck_tab():
@@ -506,14 +579,13 @@ def export_deck():
     return export_to_anki_csv(_flashcard_deck, "flashcards_export.csv")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Tab 5: Progress
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 _TRACKING_OFF_HTML = """
 <div style="font-family:system-ui,sans-serif;background:#1a202c;border-radius:14px;
             padding:32px;color:#718096;text-align:center;max-width:600px;margin:12px auto;">
-  <div style="font-size:32px;margin-bottom:12px;">&#128202;</div>
   <div style="font-size:16px;font-weight:600;color:#a0aec0;margin-bottom:8px;">
     Progress tracking is off
   </div>
@@ -522,7 +594,7 @@ _TRACKING_OFF_HTML = """
     <code style="background:#2d3748;padding:2px 6px;border-radius:4px;">--track</code>
     to enable curriculum tracking.<br><br>
     <code style="background:#2d3748;padding:6px 10px;border-radius:6px;display:inline-block;">
-    python gradio_app.py --pretrained qwen-3b --index ../rag/rag_index --track
+    python app.py --pretrained qwen-3b --index ../rag/rag_index --track
     </code>
   </div>
 </div>
@@ -532,87 +604,128 @@ _TRACKING_OFF_HTML = """
 def refresh_progress():
     if _tracker is None:
         return _TRACKING_OFF_HTML
-    from progress_tracker import progress_to_html
+    from tracker import progress_to_html
     return progress_to_html(_tracker)
 
 
-def reset_chapter_progress(chapter: str):
+def reset_progress(source: str, chapter: str, section: str):
     if _tracker is None:
         return _TRACKING_OFF_HTML, "Tracking not enabled."
-    ch = chapter if chapter and chapter != "-- All chapters --" else None
-    _tracker.reset(chapter=ch)
-    label = f"chapter '{ch}'" if ch else "all chapters"
-    from progress_tracker import progress_to_html
+    prefix = _topic_tree.breadcrumb_prefix(source, chapter, section) if _topic_tree else None
+    _tracker.reset(breadcrumb_prefix=prefix or None)
+    label = f"'{prefix}'" if prefix else "everything"
+    from tracker import progress_to_html
     return progress_to_html(_tracker), f"Reset {label}."
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# UI helper
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+# UI construction
+# =============================================================================
 
-def _chapter_choices() -> list:
-    if _tracker is None:
-        return ["-- All chapters --"]
-    return ["-- All chapters --"] + _tracker.chapters()
+def _make_topic_picker(show_topic_override: bool = True):
+    """
+    Build the three-level cascading source/chapter/section dropdowns.
+
+    - Source dropdown: hidden when there is exactly one source (auto-selected).
+    - Chapter dropdown: pre-populated from the default source at build time,
+      so it's immediately usable without triggering a round-trip first.
+    - Section dropdown: hidden until a chapter is selected.
+    - Topic override: optional free-text field, takes precedence over picker.
+
+    Returns (source_dd, chapter_dd, section_dd, topic_txt).
+    topic_txt is a gr.Textbox with visible=False when show_topic_override=False.
+    """
+    sources, default_source, initial_chapters, show_source = _picker_initial_state()
+
+    with gr.Row():
+        source_dd = gr.Dropdown(
+            choices  = sources,
+            value    = default_source,
+            label    = "Source",
+            scale    = 2,
+            visible  = show_source,
+        )
+        chapter_dd = gr.Dropdown(
+            choices  = initial_chapters,
+            value    = None,
+            label    = "Chapter",
+            scale    = 2,
+            visible  = bool(initial_chapters),
+        )
+        section_dd = gr.Dropdown(
+            choices  = [],
+            value    = None,
+            label    = "Section",
+            scale    = 2,
+            visible  = False,
+        )
+        topic_txt = gr.Textbox(
+            label       = "Topic override (optional)",
+            placeholder = "e.g. self-attention mechanism",
+            scale       = 3,
+            visible     = show_topic_override,
+        )
+
+    return source_dd, chapter_dd, section_dd, topic_txt
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Gradio UI
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_ui():
-    tracking_on     = _tracker is not None
-    chapter_choices = _chapter_choices()
-
-    mode_note = (
-        "**Tracking mode** — questions are chosen by curriculum priority, results saved to `progress.json`."
-        if tracking_on else
-        "**Random mode** — questions are drawn randomly. Start with `--track` to enable progress tracking."
+def _wire_picker(source_dd, chapter_dd, section_dd) -> None:
+    """Wire the cascade events for a topic picker trio."""
+    source_dd.change(
+        fn      = _on_source_change,
+        inputs  = [source_dd],
+        outputs = [chapter_dd, section_dd],
+    )
+    chapter_dd.change(
+        fn      = _on_chapter_change,
+        inputs  = [source_dd, chapter_dd],
+        outputs = [section_dd],
     )
 
-    with gr.Blocks(title="DAT255 Teaching Assistant") as demo:
-        gr.Markdown(
-            "# DAT255 Teaching Assistant\n"
-            "Powered by a custom decoder-only transformer + RAG\n\n"
-            + mode_note
-        )
+
+def build_ui():
+    tracking_on = _tracker is not None
+
+    mode_note = (
+        "**Tracking mode** — questions chosen by curriculum priority, results saved."
+        if tracking_on else
+        "**Random mode** — questions drawn randomly. Pass `--track` to enable progress tracking."
+    )
+
+    with gr.Blocks(title="Teaching Assistant") as demo:
+        gr.Markdown("# Teaching Assistant\n" + mode_note)
 
         with gr.Tabs():
 
             # ── Tab 1: Ask ────────────────────────────────────────────────────
-            with gr.Tab("Ask a question"):
-                question_box = gr.Textbox(label="Your question",
-                                          placeholder="e.g. What is dropout and why does it help?",
-                                          lines=2)
+            with gr.Tab("Ask"):
+                question_box = gr.Textbox(
+                    label="Your question",
+                    placeholder="e.g. What is dropout and why does it help?",
+                    lines=2,
+                )
                 with gr.Row():
                     use_rag = gr.Checkbox(label="Use RAG (recommended)", value=True)
                     temp    = gr.Slider(0.1, 1.5, value=0.7, step=0.1, label="Temperature")
-                ask_btn     = gr.Button("Ask", variant="primary")
-                answer_out  = gr.Textbox(label="Answer", lines=6)
-                sources_out = gr.Markdown()
+                ask_btn    = gr.Button("Ask", variant="primary")
+                answer_out = gr.Textbox(label="Answer", lines=6)
+                sources_md = gr.Markdown()
 
                 ask_btn.click(fn=ask_question,
                               inputs=[question_box, use_rag, temp],
-                              outputs=[answer_out, sources_out])
+                              outputs=[answer_out, sources_md])
 
             # ── Tab 2: Quiz ───────────────────────────────────────────────────
-            with gr.Tab("Quiz me"):
+            with gr.Tab("Quiz"):
                 gr.Markdown(
-                    "Questions chosen by curriculum priority (unseen first, then weak topics). "
-                    "Filter by chapter to stay focused on one area."
+                    "Questions chosen by curriculum priority. "
+                    "Filter by chapter or section to focus on one area."
                     if tracking_on else
-                    "Leave topic and chapter blank for a random question from the index."
+                    "Leave all filters blank for a random question from the index."
                 )
-                with gr.Row():
-                    quiz_chapter = gr.Dropdown(
-                        choices=chapter_choices, value="-- All chapters --",
-                        label="Chapter" + (" (tracking)" if tracking_on else ""),
-                        scale=2,
-                    )
-                    quiz_topic = gr.Textbox(
-                        label="Topic override (optional)",
-                        placeholder="e.g. attention mechanism", scale=3,
-                    )
+                q_source, q_chapter, q_section, q_topic = _make_topic_picker()
+                _wire_picker(q_source, q_chapter, q_section)
+
                 quiz_gen_btn  = gr.Button("Generate question", variant="primary")
                 quiz_status   = gr.Markdown()
                 q_display     = gr.Textbox(label="Question", lines=3, interactive=False)
@@ -620,50 +733,53 @@ def build_ui():
                 submit_btn    = gr.Button("Submit answer", visible=False)
                 feedback_md   = gr.Markdown()
 
-                quiz_gen_btn.click(fn=new_quiz_question,
-                                   inputs=[quiz_topic, quiz_chapter],
-                                   outputs=[q_display, feedback_md, options_radio,
-                                            submit_btn, quiz_status])
+                quiz_gen_btn.click(
+                    fn      = new_quiz_question,
+                    inputs  = [q_topic, q_source, q_chapter, q_section],
+                    outputs = [q_display, feedback_md, options_radio, submit_btn, quiz_status],
+                )
                 submit_btn.click(fn=submit_quiz_answer,
                                  inputs=[options_radio], outputs=[feedback_md])
 
             # ── Tab 3: Practice answer ────────────────────────────────────────
-            with gr.Tab("Practice answer"):
+            with gr.Tab("Practice"):
                 gr.Markdown(
-                    "The assistant picks the next highest-priority chunk and generates an "
-                    "exam question from it. Write your answer and get a score + feedback. "
+                    "The assistant picks the next high-priority chunk and generates an "
+                    "exam question. Write your answer and get a score + feedback. "
                     "Score >= 3/5 counts as correct in the tracker."
                     if tracking_on else
                     "The assistant generates an exam question from your course material. "
                     "Write your answer, then click **Get feedback**."
                 )
-                with gr.Row():
-                    fb_chapter = gr.Dropdown(
-                        choices=chapter_choices, value="-- All chapters --",
-                        label="Chapter" + (" (tracking)" if tracking_on else ""),
-                        scale=2,
-                    )
-                    fb_topic  = gr.Textbox(label="Topic override (optional)",
-                                           placeholder="e.g. batch normalisation", scale=3)
+                fb_source, fb_chapter, fb_section, fb_topic = _make_topic_picker()
+                _wire_picker(fb_source, fb_chapter, fb_section)
+
                 fb_gen_btn    = gr.Button("Generate question", variant="primary")
                 fb_status     = gr.Markdown()
                 fb_question   = gr.Textbox(
                     label="Question",
                     placeholder="Click 'Generate question' or type your own...",
-                    lines=3, interactive=True)
-                fb_answer     = gr.Textbox(label="Your answer",
-                                           placeholder="Write your answer here...",
-                                           lines=6, visible=False)
+                    lines=3, interactive=True,
+                )
+                fb_answer     = gr.Textbox(
+                    label="Your answer",
+                    placeholder="Write your answer here...",
+                    lines=6, visible=False,
+                )
                 fb_submit_btn = gr.Button("Get feedback", variant="primary", visible=False)
                 fb_result     = gr.Markdown()
 
-                fb_gen_btn.click(fn=generate_feedback_question,
-                                 inputs=[fb_topic, fb_chapter],
-                                 outputs=[fb_question, fb_answer, fb_submit_btn, fb_status])
+                fb_gen_btn.click(
+                    fn      = generate_feedback_question,
+                    inputs  = [fb_topic, fb_source, fb_chapter, fb_section],
+                    outputs = [fb_question, fb_answer, fb_submit_btn, fb_status],
+                )
                 fb_question.change(
-                    fn=lambda q: (gr.update(visible=bool(q.strip())),
-                                  gr.update(visible=bool(q.strip()))),
-                    inputs=[fb_question], outputs=[fb_answer, fb_submit_btn])
+                    fn      = lambda q: (gr.update(visible=bool(q.strip())),
+                                         gr.update(visible=bool(q.strip()))),
+                    inputs  = [fb_question],
+                    outputs = [fb_answer, fb_submit_btn],
+                )
                 fb_submit_btn.click(fn=review_student_answer,
                                     inputs=[fb_question, fb_answer],
                                     outputs=[fb_result])
@@ -673,22 +789,24 @@ def build_ui():
                 with gr.Tabs():
                     with gr.Tab("Generate"):
                         gr.Markdown("Generate a flashcard. The answer is pre-loaded but hidden.")
-                        with gr.Row():
-                            fc_topic   = gr.Textbox(label="Topic (optional)",
-                                                    placeholder="e.g. transformer self-attention",
-                                                    scale=4)
-                            fc_gen_btn = gr.Button("Generate", variant="primary", scale=1)
+                        fc_source, fc_chapter, fc_section, fc_topic = _make_topic_picker()
+                        _wire_picker(fc_source, fc_chapter, fc_section)
+
+                        fc_gen_btn   = gr.Button("Generate", variant="primary")
                         fc_card_html = gr.HTML()
                         fc_flip_btn  = gr.Button("Flip", visible=False)
                         fc_status    = gr.Markdown()
 
-                        fc_gen_btn.click(fn=new_flashcard, inputs=[fc_topic],
-                                         outputs=[fc_card_html, fc_flip_btn, fc_status])
+                        fc_gen_btn.click(
+                            fn      = new_flashcard,
+                            inputs  = [fc_topic, fc_source, fc_chapter, fc_section],
+                            outputs = [fc_card_html, fc_flip_btn, fc_status],
+                        )
                         fc_flip_btn.click(fn=flip_gen_card,
                                           outputs=[fc_card_html, fc_flip_btn])
 
                     with gr.Tab("My Deck"):
-                        gr.Markdown("Browse saved flashcards. Cards are auto-saved when generated.")
+                        gr.Markdown("Browse saved flashcards.")
                         deck_load_btn = gr.Button("Load / Refresh deck")
                         deck_html     = gr.HTML()
                         deck_count_md = gr.Markdown()
@@ -711,7 +829,7 @@ def build_ui():
             # ── Tab 5: Progress ───────────────────────────────────────────────
             with gr.Tab("Progress"):
                 gr.Markdown(
-                    "Your curriculum coverage and accuracy, updated as you answer questions."
+                    "Curriculum coverage and accuracy, updated as you answer questions."
                     if tracking_on else
                     "Start the app with `--track` to enable the progress dashboard."
                 )
@@ -720,23 +838,25 @@ def build_ui():
                 refresh_btn.click(fn=refresh_progress, outputs=[progress_html])
 
                 if tracking_on:
-                    gr.Markdown("---")
-                    with gr.Row():
-                        reset_chapter_dd = gr.Dropdown(
-                            choices=chapter_choices, value="-- All chapters --",
-                            label="Reset progress for chapter", scale=3)
-                        reset_btn = gr.Button("Reset progress", variant="stop", scale=1)
+                    gr.Markdown("---\n**Reset progress**")
+                    p_source, p_chapter, p_section, _ = _make_topic_picker(
+                        show_topic_override=False
+                    )
+                    _wire_picker(p_source, p_chapter, p_section)
+                    reset_btn    = gr.Button("Reset selected", variant="stop")
                     reset_status = gr.Markdown()
-                    reset_btn.click(fn=reset_chapter_progress,
-                                    inputs=[reset_chapter_dd],
-                                    outputs=[progress_html, reset_status])
+                    reset_btn.click(
+                        fn      = reset_progress,
+                        inputs  = [p_source, p_chapter, p_section],
+                        outputs = [progress_html, reset_status],
+                    )
 
     return demo
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # Entry point
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -748,17 +868,16 @@ if __name__ == "__main__":
     parser.add_argument("--port",       type=int, default=7860)
     parser.add_argument("--share",      action="store_true")
     parser.add_argument("--pretrained", default=None, metavar="MODEL",
-                        help="HuggingFace model key (qwen-1.5b/qwen-3b/qwen-3b-4b/mistral-4b) "
-                             "or full model ID. Append :bnb4 for 4-bit.")
+                        help="Model key or full HuggingFace model ID. Append :bnb4 for 4-bit.")
     parser.add_argument("--track",      action="store_true",
-                        help="Enable progress tracking. Saves results to --progress file.")
+                        help="Enable progress tracking.")
     parser.add_argument("--chunks",     default=None,
                         help="Path to chunks.json. Defaults to {index}/chunks.json.")
     parser.add_argument("--progress",   default="progress.json",
-                        help="Path to progress save file (default: progress.json).")
+                        help="Progress save file (default: progress.json).")
     args = parser.parse_args()
 
-    # Load model / retriever
+    # Load retriever / model
     if Path(args.checkpoint).exists():
         load_pipeline(args.checkpoint, args.index)
     else:
@@ -769,18 +888,32 @@ if __name__ == "__main__":
     if args.pretrained:
         load_pretrained(args.pretrained)
 
+    # Load chunks for topic tree (independent of --track)
+    chunks_path = args.chunks or str(Path(args.index) / "chunks.json")
+    if Path(chunks_path).exists():
+        import json
+        with open(chunks_path, encoding="utf-8") as f:
+            _raw_chunks = json.load(f)
+        _topic_tree = TopicTree(_raw_chunks)
+        roots = _topic_tree.root_choices()
+        print(f"Topic tree: {len(roots)} source(s) from {chunks_path}")
+        if _topic_tree.single_root():
+            chapters = _topic_tree.child_choices(roots[0])
+            print(f"  Auto-selected source: {roots[0]!r} ({len(chapters)} chapters)")
+    else:
+        print(f"[INFO] chunks.json not found at {chunks_path} — chapter picker disabled.")
+        print("       Pass --chunks <path> to enable it.")
+
     # Load progress tracker
     if args.track:
-        chunks_path = args.chunks or str(Path(args.index) / "chunks.json")
         if not Path(chunks_path).exists():
             print(f"[WARN] --track enabled but chunks.json not found at: {chunks_path}")
-            print("       Pass --chunks <path> to specify its location.")
         else:
-            from progress_tracker import ProgressTracker
+            from tracker import ProgressTracker
             _tracker = ProgressTracker(chunks_path, args.progress)
             print(f"Progress tracking enabled. Saving to: {args.progress}")
     else:
-        print("Random mode (no tracking). Pass --track to enable progress tracking.")
+        print("Random mode. Pass --track to enable progress tracking.")
 
     ui = build_ui()
     ui.launch(server_port=args.port, share=args.share)
