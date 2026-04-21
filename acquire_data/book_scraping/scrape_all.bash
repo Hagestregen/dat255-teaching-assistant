@@ -3,12 +3,12 @@
 # Change to the directory where this script is located
 cd "$(dirname "$0")"
 
-# Scrape all remaining chapters of "Deep Learning with Python" 3rd edition
+# Scrape all chapters of "Deep Learning with Python" 3rd edition given in scrape_commands.txt
 # Reads commands from scrape_commands.txt and executes them one by one
 
 echo "========================================"
 echo "Starting to scrape Deep Learning with Python 3rd Edition"
-echo "Chapters 3 to 20"
+echo "Chapters given in scrape_commands.txt"
 echo "========================================"
 
 # Check if the commands file exists

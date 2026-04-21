@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 9: ConvNet architecture patterns
 
 A model’s “architecture” is the sum of the choices that went into creating it:
 which layers to use, how to configure them, in what arrangement to connect them.

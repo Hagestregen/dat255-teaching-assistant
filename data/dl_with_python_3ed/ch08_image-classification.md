@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 8: Image classification
 
 Computer vision was the first big success story of deep learning.
 It led to the initial rise of deep learning between 2011 and 2015.

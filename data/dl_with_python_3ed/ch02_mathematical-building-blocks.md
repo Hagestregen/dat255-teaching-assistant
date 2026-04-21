@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 2: The mathematical building blocks of neural networks
 
 Understanding deep learning requires familiarity with many simple mathematical
 concepts: *tensors*, *tensor operations*, *differentiation*, *gradient descent*,

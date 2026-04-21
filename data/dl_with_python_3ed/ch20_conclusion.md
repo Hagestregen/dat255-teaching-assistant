@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 20: Conclusions
 
 We’ll start with a bird’s-eye view of what you should take away from this book. This should refresh your memory regarding some of the concepts you’ve learned. Then we’ll give you a short list of resources and strategies for learning further about machine learning and staying up to date with new advances.
 
