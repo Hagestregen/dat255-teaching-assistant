@@ -33,8 +33,8 @@ import gradio as gr
 import torch
 
 from topic_tree import TopicTree, natural_sort
-
-
+from rag.retriever import Retriever
+from generation import get_random_chunk_in_scope
 # =============================================================================
 # Global state
 # =============================================================================
@@ -50,10 +50,12 @@ _current_quiz_chunk_id: int    = None
 _current_fb_chunk_id:   int    = None
 
 
-def _active_retriever():
+def _active_retriever() -> Retriever | None:
     if _pipeline is not None:
         return _pipeline.retriever
-    return _retriever
+    if _retriever is not None:
+        return _retriever
+    return None
 
 
 # =============================================================================
@@ -174,14 +176,16 @@ def _picker_initial_state() -> tuple[list, str | None, list, list]:
 
     sources        = _topic_tree.root_choices()
     default_source = _topic_tree.single_root()           # non-None when exactly one source
-    show_source    = len(sources) > 1                    # hide when single source
+    # show_source    = len(sources) > 1                    # hide when single source  # TODO: REMOVE
 
     initial_chapters = (
         _topic_tree.child_choices(default_source)
         if default_source else []
     )
+    
+    return sources, default_source, initial_chapters
 
-    return sources, default_source, initial_chapters, show_source
+    # return sources, default_source, initial_chapters, True #show_source # TODO: REMOVE
 
 
 # =============================================================================
@@ -218,6 +222,8 @@ def ask_question(question: str, use_rag: bool, temperature: float):
 # =============================================================================
 
 def new_quiz_question(topic_text: str, source: str, chapter: str, section: str):
+    # DEBUG (REMOVE)
+    print(f"new_quiz_question: {topic_text}, {source}, {chapter}, {section}")
     global _current_quiz, _current_quiz_chunk_id
     retriever = _active_retriever()
     if retriever is None:
@@ -247,22 +253,43 @@ def new_quiz_question(topic_text: str, source: str, chapter: str, section: str):
         )
     else:
         _current_quiz_chunk_id = None
+        prefetched_chunk = None
+        
         if topic_override:
+            # DEBUG (REMOVE)
+            print(f"topic_override: {topic_override}")
             effective_topic = topic_override
-        elif breadcrumb_prefix:
-            effective_topic = breadcrumb_prefix.split(" > ")[-1]
         else:
-            effective_topic = get_random_topic_from_retriever(retriever)
+            # Pick a random chunk within the selected scope
+            prefetched_chunk = get_random_chunk_in_scope(retriever, breadcrumb_prefix or None)
+            if prefetched_chunk:
+                breadcrumb = prefetched_chunk.get("metadata", {}).get("breadcrumb", "")
+                # Use the leaf heading (most specific part) as the topic
+                effective_topic = breadcrumb.split(" > ")[-1].strip() if breadcrumb else \
+                                get_random_topic_from_retriever(retriever)
+            else:
+                effective_topic = get_random_topic_from_retriever(retriever)
+        # elif breadcrumb_prefix:
+        #     # DEBUG (REMOVE)
+        #     print(f"breadcrumb_prefix: {breadcrumb_prefix}")
+        #     effective_topic = breadcrumb_prefix.split(" > ")[-1]
+        # else:
+        #     # DEBUG (REMOVE)
+        #     print("No topic override or breadcrumb prefix, using random topic")
+        #     effective_topic = get_random_topic_from_retriever(retriever)
         status = f"Topic: *{effective_topic}*"
+
+    # DEBUG (REMOVE)
+    print(f"effective_topic: {effective_topic}")
 
     if _pretrained_pipe is not None:
         _current_quiz = generate_quiz_question_with_pretrained(
-            topic=effective_topic, pipe=_pretrained_pipe, retriever=retriever)
+            topic=effective_topic, pipe=_pretrained_pipe, retriever=retriever, prefetched_chunk=prefetched_chunk)
     elif _pipeline is not None:
         _current_quiz = generate_quiz_question_with_model(
             topic=effective_topic, model=_pipeline.model,
             tokenizer=_pipeline.tokenizer, retriever=retriever,
-            device=_pipeline.device)
+            device=_pipeline.device, prefetched_chunk=prefetched_chunk)
     else:
         return ("No model loaded.", "",
                 gr.update(choices=[]), gr.update(visible=False), "")
@@ -270,8 +297,11 @@ def new_quiz_question(topic_text: str, source: str, chapter: str, section: str):
     if _current_quiz is None:
         return ("Failed to generate question — try a different topic.", "",
                 gr.update(choices=[]), gr.update(visible=False), status)
-
+    # DEBUG (REMOVE)
+    print(f"current_quiz: {_current_quiz}")
     choices = [f"{l}) {o}" for l, o in zip("ABCD", _current_quiz.options)]
+    # DEBUG (REMOVE)
+    print(f"choices: {choices}")
     return (
         _current_quiz.question,
         "",
@@ -635,7 +665,10 @@ def _make_topic_picker(show_topic_override: bool = True):
     Returns (source_dd, chapter_dd, section_dd, topic_txt).
     topic_txt is a gr.Textbox with visible=False when show_topic_override=False.
     """
-    sources, default_source, initial_chapters, show_source = _picker_initial_state()
+    sources, default_source, initial_chapters = _picker_initial_state()
+    print(f"sources: {sources}")
+    print(f"default_source: {default_source}")
+    print(f"initial_chapters: {initial_chapters}")
 
     with gr.Row():
         source_dd = gr.Dropdown(
@@ -643,7 +676,7 @@ def _make_topic_picker(show_topic_override: bool = True):
             value    = default_source,
             label    = "Source",
             scale    = 2,
-            visible  = show_source,
+            visible  = True,
         )
         chapter_dd = gr.Dropdown(
             choices  = initial_chapters,
@@ -669,17 +702,20 @@ def _make_topic_picker(show_topic_override: bool = True):
     return source_dd, chapter_dd, section_dd, topic_txt
 
 
-def _wire_picker(source_dd, chapter_dd, section_dd) -> None:
+def _wire_picker(source_dd: gr.Dropdown, chapter_dd: gr.Dropdown, section_dd: gr.Dropdown) -> None:
     """Wire the cascade events for a topic picker trio."""
     source_dd.change(
         fn      = _on_source_change,
         inputs  = [source_dd],
         outputs = [chapter_dd, section_dd],
+        show_progress=False,
     )
     chapter_dd.change(
         fn      = _on_chapter_change,
         inputs  = [source_dd, chapter_dd],
         outputs = [section_dd],
+        trigger_mode="always_last",
+        show_progress=False,
     )
 
 
@@ -723,23 +759,48 @@ def build_ui():
                     if tracking_on else
                     "Leave all filters blank for a random question from the index."
                 )
-                q_source, q_chapter, q_section, q_topic = _make_topic_picker()
-                _wire_picker(q_source, q_chapter, q_section)
 
-                quiz_gen_btn  = gr.Button("Generate question", variant="primary")
+                # ── Path A: Browse by source/chapter/section ──────────────────
+                gr.Markdown("### 📚 Generate from source")
+                q_source, q_chapter, q_section, _ = _make_topic_picker(show_topic_override=False)
+                _wire_picker(q_source, q_chapter, q_section)
+                section_btn = gr.Button("Generate from section", variant="primary")
+
+                gr.Markdown("---")
+
+                # ── Path B: Free-text topic override ──────────────────────────
+                gr.Markdown("### ✏️ Generate from topic")
+                q_topic = gr.Textbox(
+                    label="Topic",
+                    placeholder="e.g. self-attention mechanism",
+                    lines=1,
+                )
+                topic_btn = gr.Button("Generate from topic", variant="secondary")
+
+                # ── Shared output ─────────────────────────────────────────────
+                gr.Markdown("---")
                 quiz_status   = gr.Markdown()
                 q_display     = gr.Textbox(label="Question", lines=3, interactive=False)
                 options_radio = gr.Radio(choices=[], label="Options", visible=False)
                 submit_btn    = gr.Button("Submit answer", visible=False)
                 feedback_md   = gr.Markdown()
 
-                quiz_gen_btn.click(
+                # Wire both buttons to the same handler, topic is empty for section path
+                section_btn.click(
                     fn      = new_quiz_question,
-                    inputs  = [q_topic, q_source, q_chapter, q_section],
+                    inputs  = [gr.State(""), q_source, q_chapter, q_section],
                     outputs = [q_display, feedback_md, options_radio, submit_btn, quiz_status],
                 )
-                submit_btn.click(fn=submit_quiz_answer,
-                                 inputs=[options_radio], outputs=[feedback_md])
+                topic_btn.click(
+                    fn      = new_quiz_question,
+                    inputs  = [q_topic, gr.State(None), gr.State(None), gr.State(None)],
+                    outputs = [q_display, feedback_md, options_radio, submit_btn, quiz_status],
+                )
+                submit_btn.click(
+                    fn      = submit_quiz_answer,
+                    inputs  = [options_radio],
+                    outputs = [feedback_md],
+                )
 
             # ── Tab 3: Practice answer ────────────────────────────────────────
             with gr.Tab("Practice"):

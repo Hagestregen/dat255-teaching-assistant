@@ -108,7 +108,7 @@ def main():
     args = parser.parse_args()
 
     device = args.device or detect_device()
-    model_name = args.model or CUDA_MODEL if device == "cuda" else CPU_MODEL
+    model_name = args.model or (CUDA_MODEL if device == "cuda" else CPU_MODEL)
     print(f"Device: {device}  →  model: {model_name}")
 
     chunks_path = Path(args.chunks)

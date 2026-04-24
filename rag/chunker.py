@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-chunker.py
+chunker.py — structure-aware two-pass markdown chunker
 ==========
 Reads a manifest .txt file listing folders and/or .md files, applies
 structure-aware two-pass chunking, and writes all chunks to chunks.json.
@@ -8,17 +8,6 @@ structure-aware two-pass chunking, and writes all chunks to chunks.json.
 Pass 1 — Logical split:  MarkdownHeaderTextSplitter breaks on #/##/###/####
 Pass 2 — Size cap:       RecursiveCharacterTextSplitter sub-chunks anything
                          still too large, preserving header metadata.
-
-YAML frontmatter support:
-    If a .md file begins with a `---` frontmatter block containing a `source:`
-    field, that value is prepended to every chunk's breadcrumb:
-
-        source: "Deep Learning with Python"
-        → breadcrumb: "Deep Learning with Python > Chapter 1: ... > Section"
-
-    This is how multiple books/sources are distinguished in the topic tree.
-    Files without frontmatter are chunked normally (breadcrumb starts at H1).
-
 Usage:
     python chunker.py --manifest sources.txt [--output rag_index/chunks.json]
 
@@ -41,7 +30,6 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 
-# Chunking config
 HEADERS_TO_SPLIT_ON = [
     ("#",    "h1"),
     ("##",   "h2"),
@@ -49,14 +37,19 @@ HEADERS_TO_SPLIT_ON = [
     ("####", "h4"),
 ]
 
-PASS2_CHUNK_SIZE    = 1000
-PASS2_CHUNK_OVERLAP = 100
+# Sized to match what quiz.py actually feeds the model.
+# Overlap is ~15% of chunk size — enough to avoid cutting mid-concept.
+PASS2_CHUNK_SIZE    = 600
+PASS2_CHUNK_OVERLAP = 80
+
+# Chunks shorter than this are almost always orphaned headers or
+# one-line stubs — not useful for retrieval or question generation.
+MIN_CHUNK_CHARS = 80
 
 markdown_splitter = MarkdownHeaderTextSplitter(
     headers_to_split_on=HEADERS_TO_SPLIT_ON,
     strip_headers=False,
 )
-
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=PASS2_CHUNK_SIZE,
     chunk_overlap=PASS2_CHUNK_OVERLAP,
@@ -65,10 +58,6 @@ text_splitter = RecursiveCharacterTextSplitter(
 
 
 def load_manifest(manifest_path: str) -> list[Path]:
-    """
-    Parse the manifest and return a flat list of .md file Paths.
-    Folders are expanded recursively.
-    """
     manifest = Path(manifest_path)
     if not manifest.exists():
         raise FileNotFoundError(f"Manifest not found: {manifest_path}")
@@ -80,12 +69,10 @@ def load_manifest(manifest_path: str) -> list[Path]:
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
-
         p = Path(line)
         if not p.exists():
             print(f"  [WARN] Path not found, skipping: {p}")
             continue
-
         if p.is_dir():
             found = sorted(p.rglob("*.md"))
             if not found:
@@ -105,41 +92,22 @@ def load_manifest(manifest_path: str) -> list[Path]:
 
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    """
-    Strip and parse a YAML frontmatter block from the top of a markdown string.
-
-    Returns (metadata_dict, remaining_markdown).
-    Only the `source:` key is used; other keys are ignored.
-    If no frontmatter is present, returns ({}, original_text).
-    """
     if not text.startswith("---"):
         return {}, text
-
     end = text.find("\n---", 3)
     if end == -1:
         return {}, text
-
     block    = text[3:end].strip()
     rest     = text[end + 4:].lstrip("\n")
     metadata = {}
-
     for line in block.splitlines():
         m = re.match(r'^(\w+)\s*:\s*"?([^"]+)"?\s*$', line)
         if m:
             metadata[m.group(1).strip()] = m.group(2).strip()
-
     return metadata, rest
 
 
 def build_breadcrumb(metadata: dict, source: str | None = None) -> str:
-    """
-    Build a breadcrumb string from chunk metadata.
-
-    If source is provided it is prepended:
-        "Deep Learning with Python > Chapter 1: What is DL? > Artificial intelligence"
-    Otherwise:
-        "Chapter 1: What is DL? > Artificial intelligence"
-    """
     parts = []
     if source:
         parts.append(source)
@@ -150,26 +118,32 @@ def build_breadcrumb(metadata: dict, source: str | None = None) -> str:
     return " > ".join(parts)
 
 
+def _is_stub(text: str) -> bool:
+    """
+    True if the chunk is just a header line with no real body content.
+    e.g. "# Chapter 1: What is deep learning?" with nothing below it.
+    """
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    if not lines:
+        return True
+    # All lines are markdown headers → no body content
+    if all(l.startswith("#") for l in lines):
+        return True
+    # Too short to be useful
+    if len(text.strip()) < MIN_CHUNK_CHARS:
+        return True
+    return False
+
+
 def chunk_file(md_path: Path) -> list[dict]:
     """
     Two-pass chunk a single .md file.
 
-    Returns a list of dicts:
-        {
-          "text":     str,
-          "source":   str,
-          "metadata": {
-              "h1": str | None,
-              "h2": str | None,
-              "h3": str | None,
-              "h4": str | None,
-              "source_name": str | None,
-              "breadcrumb": str,
-          }
-        }
+    The breadcrumb is stored in metadata only — it is NOT baked into
+    the text field. quiz.py can prepend it as a clearly-labelled header
+    at generation time, keeping it out of the model's question output.
     """
     raw = md_path.read_text(encoding="utf-8")
-
     frontmatter, content = _parse_frontmatter(raw)
     source_name          = frontmatter.get("source") or None
 
@@ -179,7 +153,7 @@ def chunk_file(md_path: Path) -> list[dict]:
     chunks: list[dict] = []
     for doc in final_docs:
         text = doc.page_content.strip()
-        if not text:
+        if _is_stub(text):
             continue
 
         meta = {
@@ -191,11 +165,14 @@ def chunk_file(md_path: Path) -> list[dict]:
             "breadcrumb":  build_breadcrumb(doc.metadata, source_name),
         }
 
-        prefix       = f"[{meta['breadcrumb']}]\n" if meta["breadcrumb"] else ""
-        enriched     = prefix + text
+        # Clean text: strip any leading markdown header lines that are
+        # just the section title repeated (common after the splitter).
+        clean_text = re.sub(r'^#+\s+.+\n', '', text, count=1).strip()
+        if not clean_text:
+            continue
 
         chunks.append({
-            "text":     enriched,
+            "text":     clean_text,    # pure content, no metadata prefix
             "source":   str(md_path),
             "metadata": meta,
         })
@@ -205,9 +182,8 @@ def chunk_file(md_path: Path) -> list[dict]:
 
 def main():
     parser = argparse.ArgumentParser(description="Structure-aware Markdown chunker")
-    parser.add_argument("--manifest", required=True, help="Path to the manifest .txt file")
-    parser.add_argument("--output",   default="rag_index/chunks.json",
-                        help="Output JSON file (default: rag_index/chunks.json)")
+    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--output",   default="rag_index/chunks.json")
     args = parser.parse_args()
 
     print(f"Loading manifest: {args.manifest}")
@@ -230,7 +206,6 @@ def main():
         json.dumps(all_chunks, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-
     print(f"\nTotal chunks: {len(all_chunks)}")
     print(f"Saved to:     {output_path}")
 

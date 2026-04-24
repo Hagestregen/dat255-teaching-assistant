@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import torch
-
+from generation import build_context
+import re
 
 @dataclass
 class QuizQuestion:
@@ -228,6 +229,11 @@ def _validate_quiz_json(data: dict) -> Optional[QuizQuestion]:
         return None
     if not isinstance(options, list) or len(options) != 4:
         return None
+    
+    # Reject if the question contains retriever path metadata
+    if re.search(r'\[.+>\s*.+\]', question):
+        print(f"  [validation] rejected: question contains source metadata")
+        return None
 
     PLACEHOLDER_FRAGMENTS = {
         "first option", "second option", "third option", "fourth option",
@@ -264,9 +270,17 @@ def generate_quiz_question_with_model(
     device:      str   = "cpu",
     max_retries: int   = 3,
     temperature: float = 0.8,
+    prefetched_chunk:  dict | None = None,
 ) -> Optional[QuizQuestion]:
-    chunks  = retriever.query(topic, top_k=2)
-    context = "\n---\n".join(c["text"] for c in chunks[:2])[:600]
+    if prefetched_chunk:
+        # Use the pre-selected chunk as primary context, then fetch one more
+        # related chunk to give the model a bit more material
+        extra   = retriever.query(topic, top_k=1)
+        chunks  = [prefetched_chunk] + [c for c in extra if c != prefetched_chunk][:1]
+    else:
+        chunks  = retriever.query(topic, top_k=2)
+        
+    context = build_context(chunks)
     prompt  = QUIZ_PROMPT_TEMPLATE.format(context=context, topic=topic)
 
     for attempt in range(max_retries):
@@ -303,9 +317,20 @@ def generate_quiz_question_with_pretrained(
     retriever,
     max_retries: int   = 3,
     temperature: float = 0.7,
+    prefetched_chunk:  dict | None = None,
 ) -> Optional[QuizQuestion]:
-    chunks   = retriever.query(topic, top_k=2)
-    context  = "\n---\n".join(c["text"] for c in chunks[:2])[:600]
+    print(f"  [pretrained] generating quiz question for topic: {topic!r}")
+    # chunks   = retriever.query(topic, top_k=2)
+    if prefetched_chunk:
+        # Use the pre-selected chunk as primary context, then fetch one more
+        # related chunk to give the model a bit more material
+        extra   = retriever.query(topic, top_k=1)
+        chunks  = [prefetched_chunk] + [c for c in extra if c != prefetched_chunk][:1]
+    else:
+        chunks  = retriever.query(topic, top_k=2)
+        
+    context = build_context(chunks)
+    print(f"  [pretrained] context cleaned: {context!r}")
     messages = _quiz_chat_messages(topic, context)
 
     for attempt in range(max_retries):
