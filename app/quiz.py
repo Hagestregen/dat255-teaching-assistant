@@ -8,21 +8,26 @@ progressively more permissive fallback parsing (markdown stripping, regex
 field extraction) to handle common model output defects.
 """
 
+from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
 from typing import List, Optional
 
-import torch
 from generation import build_context
-import re
+from llm_utils import call_llm, get_context_chunks
+
+
+# =============================================================================
+# Data model
+# =============================================================================
 
 @dataclass
 class QuizQuestion:
     """A single multiple-choice quiz question."""
     question:      str
-    options:       List[str]    # exactly 4 options
-    correct_index: int          # 0-3
+    options:       List[str]   # exactly 4 options
+    correct_index: int         # 0-3
     explanation:   str
     topic:         str = ""
     source_chunk:  str = ""
@@ -32,24 +37,27 @@ class QuizQuestion:
         return self.options[self.correct_index]
 
     def display(self) -> str:
-        letters = ["A", "B", "C", "D"]
-        lines   = [f"Question: {self.question}\n"]
-        for letter, opt in zip(letters, self.options):
+        lines = [f"Question: {self.question}\n"]
+        for letter, opt in zip("ABCD", self.options):
             lines.append(f"  {letter}) {opt}")
         return "\n".join(lines)
 
     def display_with_answer(self) -> str:
-        letters = ["A", "B", "C", "D"]
-        lines   = [f"Question: {self.question}\n"]
-        for i, (letter, opt) in enumerate(zip(letters, self.options)):
+        lines = [f"Question: {self.question}\n"]
+        for i, (letter, opt) in enumerate(zip("ABCD", self.options)):
             marker = " [correct]" if i == self.correct_index else ""
             lines.append(f"  {letter}) {opt}{marker}")
         lines.append(f"\nExplanation: {self.explanation}")
         return "\n".join(lines)
 
 
-# Prompt for raw-completion (custom checkpoint)
-QUIZ_PROMPT_TEMPLATE = """You are creating a multiple-choice quiz for a machine learning course.
+# =============================================================================
+# Prompts
+# =============================================================================
+
+# Raw-completion prompt for custom checkpoint models
+_COMPLETION_PROMPT = """\
+You are creating a multiple-choice quiz for a machine learning course.
 Based on the following lecture material, generate ONE quiz question.
 
 Lecture material:
@@ -78,7 +86,7 @@ Rules:
 - Do not output anything except the JSON object"""
 
 
-def _quiz_chat_messages(topic: str, context: str) -> list:
+def _chat_messages(topic: str, context: str) -> list:
     """Chat-format messages for instruction-tuned models (Qwen, Mistral, etc.)."""
     system = (
         "You are a quiz generator for a machine learning course. "
@@ -98,19 +106,20 @@ def _quiz_chat_messages(topic: str, context: str) -> list:
         "- Randomise which position holds the correct answer\n"
         "Output only the JSON object."
     )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user",   "content": user},
-    ]
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
+
+# =============================================================================
+# JSON parsing — tries three progressively more lenient strategies
+# =============================================================================
 
 def _extract_json(text: str) -> Optional[dict]:
     """
     Extract a quiz JSON object from model output.
 
-    Tries in order:
-      A) Clean known defects (markdown fences, trailing commas, bad options arrays,
-         missing correct_index) then json.loads
+    Strategies (in order):
+      A) Strip known defects (markdown fences, trailing commas, bad options
+         arrays, missing correct_index) then json.loads
       B) Outermost { } block + same cleaning
       C) Regex field-by-field extraction as last resort
     """
@@ -148,41 +157,35 @@ def _extract_json(text: str) -> Optional[dict]:
         sep    = ',' if prefix and prefix[-1] not in ('{', ',') else ''
         return prefix + sep + f'\n  "correct_index": {idx}\n' + s[last_brace:]
 
-    # Strategy A
-    cleaned = _clean(original)
-    cleaned = _fix_options_array(cleaned)
-    cleaned = _inject_correct_index(cleaned, original)
+    # Strategy A — clean the full text
+    cleaned = _inject_correct_index(_fix_options_array(_clean(original)), original)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
 
-    # Strategy B
-    start = original.find('{')
-    end   = original.rfind('}')
-    if start != -1 and end != -1 and end > start:
-        candidate = _clean(original[start:end + 1])
-        candidate = _fix_options_array(candidate)
-        candidate = _inject_correct_index(candidate, original)
+    # Strategy B — outermost { } block
+    start, end = original.find('{'), original.rfind('}')
+    if start != -1 and end > start:
+        candidate = _inject_correct_index(
+            _fix_options_array(_clean(original[start:end + 1])), original
+        )
         try:
             return json.loads(candidate)
         except json.JSONDecodeError:
             pass
 
-    # Strategy C
+    # Strategy C — field-by-field regex
     return _extract_fields_by_regex(original)
 
 
 def _extract_fields_by_regex(text: str) -> Optional[dict]:
-    """Last-resort field-by-field extraction when the JSON parser cannot recover."""
-    q_m = re.search(r'"question"\s*:\s*"((?:[^"\\]|\\.)+)"', text)
-    if not q_m:
-        return None
-
+    """Last-resort field-by-field extraction when json.loads cannot recover."""
+    q_m  = re.search(r'"question"\s*:\s*"((?:[^"\\]|\\.)+)"', text)
     e_m  = re.search(r'"explanation"\s*:\s*"((?:[^"\\]|\\.)+)"', text)
     ci_m = (re.search(r'"correct_index"\s*:\s*([0-3])', text) or
             re.search(r'[Cc]orrect(?:_index)?[^0-3]{0,20}([0-3])', text))
-    if not ci_m:
+    if not q_m or not ci_m:
         return None
 
     opt_start = text.find('"options"')
@@ -229,20 +232,20 @@ def _validate_quiz_json(data: dict) -> Optional[QuizQuestion]:
         return None
     if not isinstance(options, list) or len(options) != 4:
         return None
-    
-    # Reject if the question contains retriever path metadata
+
+    # Reject questions that leak retriever breadcrumb metadata
     if re.search(r'\[.+>\s*.+\]', question):
-        print(f"  [validation] rejected: question contains source metadata")
+        print("  [validation] rejected: question contains source metadata")
         return None
 
-    PLACEHOLDER_FRAGMENTS = {
+    _PLACEHOLDER_FRAGMENTS = {
         "first option", "second option", "third option", "fourth option",
         "plausible distractor", "correct answer)", "question text here",
     }
     for opt in options:
         if not isinstance(opt, str) or len(opt.strip()) < 5:
             return None
-        if any(frag in opt.lower() for frag in PLACEHOLDER_FRAGMENTS):
+        if any(frag in opt.lower() for frag in _PLACEHOLDER_FRAGMENTS):
             print(f"  [validation] rejected placeholder option: {opt!r}")
             return None
 
@@ -262,90 +265,48 @@ def _validate_quiz_json(data: dict) -> Optional[QuizQuestion]:
     )
 
 
-def generate_quiz_question_with_model(
-    topic:       str,
-    model,
-    tokenizer,
+# =============================================================================
+# Generation
+# =============================================================================
+
+def generate_quiz_question(
+    topic:            str,
     retriever,
-    device:      str   = "cpu",
-    max_retries: int   = 3,
-    temperature: float = 0.8,
-    prefetched_chunk:  dict | None = None,
+    pipe              = None,
+    model             = None,
+    tokenizer         = None,
+    device:     str   = "cpu",
+    max_retries: int  = 3,
+    temperature: float= 0.8,
+    prefetched_chunk: dict | None = None,
 ) -> Optional[QuizQuestion]:
-    if prefetched_chunk:
-        # Use the pre-selected chunk as primary context, then fetch one more
-        # related chunk to give the model a bit more material
-        extra   = retriever.query(topic, top_k=1)
-        chunks  = [prefetched_chunk] + [c for c in extra if c != prefetched_chunk][:1]
-    else:
-        chunks  = retriever.query(topic, top_k=2)
-        
+    """
+    Generate a multiple-choice quiz question grounded in course material.
+
+    Exactly one of `pipe` or `model`+`tokenizer` must be provided.
+    `prefetched_chunk` pins the primary context chunk (e.g. from the progress
+    tracker or random scope picker); one additional chunk is always fetched.
+    """
+    # print(f"  [quiz] generating question for topic: {topic!r}")
+    chunks  = get_context_chunks(retriever, topic, prefetched_chunk)
     context = build_context(chunks)
-    prompt  = QUIZ_PROMPT_TEMPLATE.format(context=context, topic=topic)
+    # print(f"  [quiz] context length: {len(context)} chars")
+
+    messages = _chat_messages(topic, context)
+    prompt   = _COMPLETION_PROMPT.format(context=context, topic=topic)
 
     for attempt in range(max_retries):
-        input_ids = tokenizer.encode(prompt)
-        x         = torch.tensor([input_ids], dtype=torch.long).to(device)
-        out       = model.generate(
-            x,
-            max_new_tokens=400,
-            temperature=temperature if attempt == 0 else 0.5,
-            top_k=50,
-            top_p=0.95,
-            stop_token=tokenizer.eot_id,
+        temp      = temperature if attempt == 0 else 0.5
+        generated = call_llm(
+            pipe=pipe, model=model, tokenizer=tokenizer, device=device,
+            messages=messages, prompt=prompt,
+            max_new_tokens=400, temperature=temp, top_p=0.95,
         )
-        generated = tokenizer.decode(out[0, len(input_ids):].tolist())
-        generated = generated.replace("<|endoftext|>", "").strip()
-
-        data = _extract_json(generated)
-        if data:
-            quiz = _validate_quiz_json(data)
-            if quiz:
-                quiz.topic        = topic
-                quiz.source_chunk = context
-                return quiz
-
-        print(f"  Attempt {attempt + 1} failed to produce valid JSON. Retrying...")
-
-    print(f"  Failed after {max_retries} attempts.")
-    return None
-
-
-def generate_quiz_question_with_pretrained(
-    topic:       str,
-    pipe,
-    retriever,
-    max_retries: int   = 3,
-    temperature: float = 0.7,
-    prefetched_chunk:  dict | None = None,
-) -> Optional[QuizQuestion]:
-    print(f"  [pretrained] generating quiz question for topic: {topic!r}")
-    # chunks   = retriever.query(topic, top_k=2)
-    if prefetched_chunk:
-        # Use the pre-selected chunk as primary context, then fetch one more
-        # related chunk to give the model a bit more material
-        extra   = retriever.query(topic, top_k=1)
-        chunks  = [prefetched_chunk] + [c for c in extra if c != prefetched_chunk][:1]
-    else:
-        chunks  = retriever.query(topic, top_k=2)
-        
-    context = build_context(chunks)
-    print(f"  [pretrained] context cleaned: {context!r}")
-    messages = _quiz_chat_messages(topic, context)
-
-    for attempt in range(max_retries):
-        temp = temperature if attempt == 0 else 0.5
-        try:
-            result    = pipe(messages, max_new_tokens=400, do_sample=True,
-                             temperature=temp, top_p=0.95, return_full_text=False)
-            raw       = result[0]["generated_text"]
-            generated = (raw[-1].get("content", "") if isinstance(raw, list) else str(raw)).strip()
-        except Exception as e:
-            print(f"  Pipeline error on attempt {attempt + 1}: {e}")
+        if generated is None:
+            print(f"  [quiz] attempt {attempt + 1}: LLM returned None")
             continue
 
-        print(f"  [pretrained] attempt {attempt + 1} raw: {repr(generated[:120])}")
-
+        print(f"  [quiz] attempt {attempt + 1} raw: {generated[:120]!r}")
         data = _extract_json(generated)
         if data:
             quiz = _validate_quiz_json(data)
@@ -354,36 +315,15 @@ def generate_quiz_question_with_pretrained(
                 quiz.source_chunk = context
                 return quiz
 
-        print(f"  Attempt {attempt + 1} failed. Retrying...")
+        print(f"  [quiz] attempt {attempt + 1} failed validation, retrying…")
 
-    print(f"  Failed after {max_retries} attempts.")
+    print(f"  [quiz] failed after {max_retries} attempts")
     return None
 
 
-def generate_quiz_question_with_gpt(
-    topic:   str,
-    context: str,
-    api_key: str,
-    model:   str = "gpt-4o-mini",
-) -> Optional[QuizQuestion]:
-    """Fallback to GPT-4 for reliable JSON output or training data generation."""
-    import openai
-    client = openai.OpenAI(api_key=api_key)
-    prompt = QUIZ_PROMPT_TEMPLATE.format(context=context, topic=topic)
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=400,
-            response_format={"type": "json_object"},
-        )
-        data = json.loads(response.choices[0].message.content)
-        return _validate_quiz_json(data)
-    except Exception as e:
-        print(f"GPT quiz generation failed: {e}")
-        return None
-
+# =============================================================================
+# Quality evaluation
+# =============================================================================
 
 def evaluate_quiz_question(quiz: QuizQuestion) -> dict:
     """
@@ -412,15 +352,12 @@ def evaluate_quiz_question(quiz: QuizQuestion) -> dict:
                 if overlap > 0.8:
                     issues.append(f"Options {i} and {j} are too similar (Jaccard={overlap:.2f})")
 
-    correct_words = set(quiz.correct_answer.lower().split())
-    distractor_sims = []
-    for i, opt in enumerate(quiz.options):
-        if i == quiz.correct_index:
-            continue
-        opt_words = set(opt.lower().split())
-        if correct_words and opt_words:
-            distractor_sims.append(len(correct_words & opt_words) / len(correct_words | opt_words))
-
+    correct_words   = set(quiz.correct_answer.lower().split())
+    distractor_sims = [
+        len(correct_words & set(opt.lower().split())) / len(correct_words | set(opt.lower().split()))
+        for i, opt in enumerate(quiz.options)
+        if i != quiz.correct_index and correct_words and set(opt.lower().split())
+    ]
     avg_sim = sum(distractor_sims) / len(distractor_sims) if distractor_sims else 0
     metrics["avg_distractor_similarity"] = round(avg_sim, 3)
     if avg_sim < 0.05:
@@ -440,8 +377,12 @@ def evaluate_quiz_question(quiz: QuizQuestion) -> dict:
     return metrics
 
 
+# =============================================================================
+# Interactive session (terminal use)
+# =============================================================================
+
 class QuizSession:
-    """Simple stateful quiz session for terminal use."""
+    """Simple stateful quiz session for terminal / scripted use."""
 
     def __init__(self, rag_pipeline, topics: List[str] = None):
         self.rag     = rag_pipeline
@@ -457,10 +398,13 @@ class QuizSession:
 
     def next_question(self, topic: str = None) -> Optional[QuizQuestion]:
         import random
-        topic = topic or random.choice(self.topics)
-        self.current = generate_quiz_question_with_model(
-            topic=topic, model=self.rag.model, tokenizer=self.rag.tokenizer,
-            retriever=self.rag.retriever, device=self.rag.device,
+        topic        = topic or random.choice(self.topics)
+        self.current = generate_quiz_question(
+            topic     = topic,
+            retriever = self.rag.retriever,
+            model     = self.rag.model,
+            tokenizer = self.rag.tokenizer,
+            device    = self.rag.device,
         )
         return self.current
 
@@ -474,7 +418,8 @@ class QuizSession:
             "correct_index":  self.current.correct_index,
             "correct_answer": self.current.correct_answer,
             "explanation":    self.current.explanation,
-            "your_answer":    self.current.options[answer_index] if 0 <= answer_index < 4 else "Invalid",
+            "your_answer":    (self.current.options[answer_index]
+                               if 0 <= answer_index < 4 else "Invalid"),
             "score":          self.score(),
         }
 
@@ -484,6 +429,10 @@ class QuizSession:
         n = sum(1 for _, _, c in self.history if c)
         return {"correct": n, "total": len(self.history), "pct": 100 * n / len(self.history)}
 
+
+# =============================================================================
+# Smoke test
+# =============================================================================
 
 if __name__ == "__main__":
     quiz = QuizQuestion(
@@ -495,9 +444,11 @@ if __name__ == "__main__":
             "Adds Gaussian noise to the input data",
         ],
         correct_index = 0,
-        explanation   = "Dropout randomly sets a fraction of activations to zero, "
-                        "forcing the network to learn redundant representations.",
-        topic         = "dropout regularization",
+        explanation   = (
+            "Dropout randomly sets a fraction of activations to zero, "
+            "forcing the network to learn redundant representations."
+        ),
+        topic = "dropout regularization",
     )
     print(quiz.display())
     print("\n--- With answer ---")

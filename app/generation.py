@@ -60,7 +60,7 @@ def get_random_chunk_in_scope(retriever: Retriever, breadcrumb_prefix: str | Non
     If prefix is None or empty, picks from all chunks.
     """
     pool = retriever.chunks  # assumes retriever exposes its chunk list
-    print(f"  [get_random_chunk_in_scope] pool: {pool!r}")
+    # print(f"  [get_random_chunk_in_scope] pool: {pool!r}")
     if breadcrumb_prefix:
         pool = [
             c for c in pool
