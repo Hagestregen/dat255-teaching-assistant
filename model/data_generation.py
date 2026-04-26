@@ -226,6 +226,23 @@ Output format:
 [{{"question": "...", "answer": "..."}}, ...]"""
 
 
+PARAPHRASE_PROMPT = """You are creating training data for a teaching assistant.
+Below is a question with its reference answer.  Rewrite the question {n}
+different ways while keeping the answer correct for all rewrites.
+
+Question: {question}
+Answer:   {answer}
+
+Rules:
+- Each rewrite must still be answerable by the same answer.
+- Use varied wording, length, and style (some shorter, some longer, some
+  conversational, some formal).
+- Output ONLY a JSON array of strings.  No markdown, no backticks, no extra text.
+
+Output format:
+["Rewrite 1?", "Rewrite 2?", "Rewrite 3?"]"""
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # JSON extraction — models sometimes wrap output in markdown fences
 # ─────────────────────────────────────────────────────────────────────────────
@@ -307,26 +324,41 @@ def generate_all_modes_local(
     chunks_json_path: str,
     output_jsonl_path: str,
     model_id: str,
-    max_chunks: int = 200,
+    max_chunks: int = 1000,
     n_qa: int = 3,
     n_explain: int = 1,
     n_review: int = 1,
     n_quiz_gen: int = 1,
+    n_paraphrase: int = 0,
     save_every: int = 20,
+    target_counts: Optional[dict] = None,
+    dedupe_threshold: float = 0.9,
 ):
     """
     Generate training examples from course material chunks.
 
     For each chunk this produces (up to):
-      - n_qa        QA pairs
-      - n_explain   explanation examples
-      - n_review    answer-review examples
-      - n_quiz_gen  quiz generation examples
+      - n_qa         QA pairs
+      - n_explain    explanation examples
+      - n_review     answer-review examples
+      - n_quiz_gen   quiz generation examples
+    Plus, for each successful QA pair, n_paraphrase additional training
+    examples are produced by rephrasing the question (same answer).
+
+    `target_counts` (optional) maps type → desired final count.  Once a
+    type hits its target, that type is skipped on remaining chunks — which
+    keeps the per-type ratio close to what you asked for, even when some
+    chunks fail JSON extraction.
+
+    `dedupe_threshold` (0–1) is the cosine threshold above which a (question,
+    answer) is considered a near-duplicate of an earlier example and dropped.
+    Set 0 (or negative) to disable.
+
+    Each emitted result includes the originating chunk text in a "context"
+    field so dataset.py can train RAG-style and bare-style prompts both.
 
     Supports resuming: if output_jsonl_path already exists, already-processed
     chunk sources are skipped.
-
-    The output JSONL is consumed by dataset.py's load_local_generated_data().
     """
     global _pipeline
 
@@ -336,7 +368,6 @@ def generate_all_modes_local(
     output_path = Path(output_jsonl_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Resume: skip chunks we've already processed
     results = []
     processed_sources: set = set()
     if output_path.exists():
@@ -354,113 +385,162 @@ def generate_all_modes_local(
     print(f"Processing {len(remaining)} chunks "
           f"(skipping {len(selected) - len(remaining)} already done)")
 
-    # Load model once
     _pipeline = load_generator(model_id)
 
     skipped = 0
+    type_counts: dict = {"qa": 0, "explanation": 0, "review": 0, "quiz_gen": 0}
+    for r in results:
+        type_counts[r["type"]] = type_counts.get(r["type"], 0) + 1
+
+    def _need(t: str) -> bool:
+        """Should we still generate this type?  False when the target is hit."""
+        if not target_counts:
+            return True
+        target = target_counts.get(t, 0)
+        return target == 0 or type_counts.get(t, 0) < target
 
     for i, chunk in enumerate(remaining):
         text       = chunk["text"][:700]
         breadcrumb = chunk.get("metadata", {}).get("breadcrumb", "")
         source     = chunk.get("source", f"chunk_{i}")
         topic      = breadcrumb or "the material"
+        ctx_short  = text[:300]
 
         print(f"  [{i+1}/{len(remaining)}] {topic[:110]}")
         t0 = time.time()
 
         # ── QA pairs ──────────────────────────────────────────────────────────
-        raw  = call_generator(QA_PROMPT.format(text=text, n=n_qa))
-        data = extract_json(raw)
-        if data:
-            pairs = data if isinstance(data, list) else data.get("pairs", data.get("questions", []))
-            for pair in pairs[:n_qa]:
-                if "question" in pair and "answer" in pair:
-                    q = str(pair["question"]).strip()
-                    a = str(pair["answer"]).strip()
-                    if len(q) > 10 and len(a) > 10:
-                        results.append({
-                            "type":     "qa",
-                            "text":     format_qa_example(q, a, context=text[:300]),
-                            "question": q, "answer": a,
-                            "source":   source, "topic": topic,
-                        })
+        if _need("qa"):
+            raw  = call_generator(QA_PROMPT.format(text=text, n=n_qa))
+            data = extract_json(raw)
+            if data:
+                pairs = data if isinstance(data, list) else data.get("pairs", data.get("questions", []))
+                for pair in pairs[:n_qa]:
+                    if "question" in pair and "answer" in pair:
+                        q = str(pair["question"]).strip()
+                        a = str(pair["answer"]).strip()
+                        if len(q) > 10 and len(a) > 10:
+                            results.append({
+                                "type":     "qa",
+                                "text":     format_qa_example(q, a, context=ctx_short),
+                                "question": q, "answer": a,
+                                "context":  ctx_short,
+                                "source":   source, "topic": topic,
+                            })
+                            type_counts["qa"] += 1
+
+                            # ── Paraphrase pass ───────────────────────────────
+                            if n_paraphrase > 0:
+                                raw_p = call_generator(
+                                    PARAPHRASE_PROMPT.format(
+                                        question=q, answer=a, n=n_paraphrase
+                                    ),
+                                    max_new_tokens=300,
+                                )
+                                rephrasings = extract_json(raw_p)
+                                if isinstance(rephrasings, list):
+                                    for rp in rephrasings[:n_paraphrase]:
+                                        rp = str(rp).strip().rstrip("?") + "?"
+                                        if len(rp) > 10:
+                                            results.append({
+                                                "type":     "qa",
+                                                "text":     format_qa_example(rp, a, context=ctx_short),
+                                                "question": rp, "answer": a,
+                                                "context":  ctx_short,
+                                                "source":   source + "#para", "topic": topic,
+                                            })
+                                            type_counts["qa"] += 1
 
         # ── Explanation ───────────────────────────────────────────────────────
-        raw  = call_generator(EXPLAIN_PROMPT.format(text=text))
-        data = extract_json(raw)
-        if data and "request" in data and "explanation" in data:
-            req = str(data["request"]).strip()
-            exp = str(data["explanation"]).strip()
-            if len(req) > 10 and len(exp) > 30:
-                results.append({
-                    "type":        "explanation",
-                    "text":        format_explanation_example(req, exp, context=text[:300]),
-                    "request":     req, "explanation": exp,
-                    "source":      source, "topic": topic,
-                })
-        else:
-            skipped += 1
+        if _need("explanation"):
+            raw  = call_generator(EXPLAIN_PROMPT.format(text=text))
+            data = extract_json(raw)
+            if data and "request" in data and "explanation" in data:
+                req = str(data["request"]).strip()
+                exp = str(data["explanation"]).strip()
+                if len(req) > 10 and len(exp) > 30:
+                    results.append({
+                        "type":        "explanation",
+                        "text":        format_explanation_example(req, exp, context=ctx_short),
+                        "request":     req, "explanation": exp,
+                        "context":     ctx_short,
+                        "source":      source, "topic": topic,
+                    })
+                    type_counts["explanation"] += 1
+            else:
+                skipped += 1
 
         # ── Answer review ─────────────────────────────────────────────────────
-        raw  = call_generator(ANSWER_REVIEW_PROMPT.format(text=text))
-        data = extract_json(raw)
-        if data and all(k in data for k in ["question", "student_answer", "review"]):
-            review   = data["review"]
-            feedback = str(review.get("feedback", "")).strip()
-            if feedback and len(feedback) > 20:
-                review_text = f"Score: {review.get('score', '?')}/5. {feedback}"
-                results.append({
-                    "type":           "review",
-                    "text":           format_review_example(
-                                          str(data["question"]).strip(),
-                                          str(data["student_answer"]).strip(),
-                                          review_text,
-                                          context=text[:300],
-                                      ),
-                    "question":       str(data["question"]).strip(),
-                    "student_answer": str(data["student_answer"]).strip(),
-                    "review":         review_text,
-                    "reference":      str(data.get("reference_answer", "")).strip(),
-                    "source":         source, "topic": topic,
-                })
-        else:
-            skipped += 1
+        if _need("review"):
+            raw  = call_generator(ANSWER_REVIEW_PROMPT.format(text=text))
+            data = extract_json(raw)
+            if data and all(k in data for k in ["question", "student_answer", "review"]):
+                review   = data["review"]
+                feedback = str(review.get("feedback", "")).strip()
+                if feedback and len(feedback) > 20:
+                    review_text = f"Score: {review.get('score', '?')}/5. {feedback}"
+                    results.append({
+                        "type":           "review",
+                        "text":           format_review_example(
+                                              str(data["question"]).strip(),
+                                              str(data["student_answer"]).strip(),
+                                              review_text,
+                                              context=ctx_short,
+                                          ),
+                        "question":       str(data["question"]).strip(),
+                        "student_answer": str(data["student_answer"]).strip(),
+                        "review":         review_text,
+                        "reference":      str(data.get("reference_answer", "")).strip(),
+                        "context":        ctx_short,
+                        "source":         source, "topic": topic,
+                    })
+                    type_counts["review"] += 1
+            else:
+                skipped += 1
 
         # ── Quiz generation ───────────────────────────────────────────────────
-        raw  = call_generator(QUIZ_GENERATION_PROMPT.format(text=text))
-        data = extract_json(raw)
-        if data and "generate_request" in data and "quiz_output" in data:
-            quiz = data["quiz_output"]
-            if (isinstance(quiz.get("options"), list)
-                    and len(quiz["options"]) >= 2
-                    and "question" in quiz):
-                # Shuffle so correct answer isn't always index 0 at inference
-                correct_answer  = quiz["options"][quiz.get("correct_index", 0)]
-                opts            = quiz["options"][:]
-                random.shuffle(opts)
-                quiz["options"]        = opts
-                quiz["correct_index"]  = opts.index(correct_answer)
+        if _need("quiz_gen"):
+            raw  = call_generator(QUIZ_GENERATION_PROMPT.format(text=text))
+            data = extract_json(raw)
+            if data and "generate_request" in data and "quiz_output" in data:
+                quiz = data["quiz_output"]
+                if (isinstance(quiz.get("options"), list)
+                        and len(quiz["options"]) >= 2
+                        and "question" in quiz):
+                    correct_answer = quiz["options"][quiz.get("correct_index", 0)]
+                    opts           = quiz["options"][:]
+                    random.shuffle(opts)
+                    quiz["options"]       = opts
+                    quiz["correct_index"] = opts.index(correct_answer)
 
-                results.append({
-                    "type":             "quiz_gen",
-                    "text":             format_quiz_example(
-                                            str(data["generate_request"]).strip(),
-                                            quiz,
-                                            context=text[:300],
-                                        ),
-                    "generate_request": str(data["generate_request"]).strip(),
-                    "quiz_output":      quiz,
-                    "source":           source, "topic": topic,
-                })
-        else:
-            skipped += 1
+                    results.append({
+                        "type":             "quiz_gen",
+                        "text":             format_quiz_example(
+                                                str(data["generate_request"]).strip(),
+                                                quiz,
+                                                context=ctx_short,
+                                            ),
+                        "generate_request": str(data["generate_request"]).strip(),
+                        "quiz_output":      quiz,
+                        "context":          ctx_short,
+                        "source":           source, "topic": topic,
+                    })
+                    type_counts["quiz_gen"] += 1
+            else:
+                skipped += 1
 
         elapsed = time.time() - t0
-        print(f"    {elapsed:.1f}s  total: {len(results)}")
+        print(f"    {elapsed:.1f}s  total: {len(results)}  by-type: {type_counts}")
 
         if (i + 1) % save_every == 0:
             _save(results, output_path)
             print(f"  [checkpoint] saved {len(results)} examples")
+
+    # ── Embedding-based deduplication ─────────────────────────────────────────
+    if dedupe_threshold > 0 and results:
+        before = len(results)
+        results = dedupe_examples(results, threshold=dedupe_threshold)
+        print(f"Dedup: {before} → {len(results)} (threshold={dedupe_threshold})")
 
     _save(results, output_path)
 
@@ -474,6 +554,70 @@ def generate_all_modes_local(
         print(f"  {t:12s} {n:5d}")
     print(f"Saved to {output_jsonl_path}")
     return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Embedding-based deduplication (Phase 3)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def dedupe_examples(
+    results: list,
+    threshold: float = 0.9,
+    model_name: str = "all-MiniLM-L6-v2",
+    batch_size: int = 64,
+) -> list:
+    """
+    Drop near-duplicate examples by cosine similarity of sentence-transformer
+    embeddings of `"<question> <answer>"`.  Keeps the FIRST occurrence; drops
+    later ones if cos ≥ threshold to anything kept so far.
+
+    Falls back to identity-only dedup when sentence-transformers / numpy are
+    unavailable (won't crash a pipeline with missing dev deps).
+    """
+    try:
+        import numpy as np
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        print("  [dedupe] sentence-transformers not available — skipping.")
+        return results
+
+    print(f"  [dedupe] embedding {len(results)} examples with {model_name}…")
+    sbert = SentenceTransformer(model_name)
+
+    def _key(r: dict) -> str:
+        if r["type"] == "qa":
+            return f"{r.get('question','')}  {r.get('answer','')}"
+        if r["type"] == "explanation":
+            return f"{r.get('request','')}  {r.get('explanation','')}"
+        if r["type"] == "review":
+            return f"{r.get('question','')}  {r.get('review','')}"
+        if r["type"] == "quiz_gen":
+            quiz = r.get("quiz_output", {}) or {}
+            return f"{r.get('generate_request','')}  {quiz.get('question','')}"
+        return r.get("text", "")
+
+    keys = [_key(r) for r in results]
+    embs = sbert.encode(keys, batch_size=batch_size, normalize_embeddings=True,
+                        show_progress_bar=False, convert_to_numpy=True)
+
+    # Greedy: keep first, drop if max-cos-to-kept ≥ threshold
+    kept_idx: list[int] = []
+    if len(embs) == 0:
+        return results
+    kept_arr = np.zeros((0, embs.shape[1]), dtype=embs.dtype)
+    for i in range(len(embs)):
+        if kept_arr.shape[0] == 0:
+            kept_idx.append(i)
+            kept_arr = embs[i:i+1]
+            continue
+        sim_max = float((kept_arr @ embs[i]).max())
+        if sim_max < threshold:
+            kept_idx.append(i)
+            kept_arr = np.concatenate([kept_arr, embs[i:i+1]], axis=0)
+
+    dropped = len(results) - len(kept_idx)
+    print(f"  [dedupe] dropped {dropped}, kept {len(kept_idx)}")
+    return [results[i] for i in kept_idx]
 
 
 def _save(results: list, path: Path):
@@ -530,7 +674,7 @@ Model presets (pass to --model):
                         help="Output JSONL path (also used as resume checkpoint)")
     parser.add_argument("--model",       default=default_model,
                         help="HuggingFace model ID, optionally with :bnb4 suffix")
-    parser.add_argument("--max-chunks",  type=int, default=200,
+    parser.add_argument("--max-chunks",  type=int, default=1000,
                         help="Max number of chunks to process")
     parser.add_argument("--n-qa",        type=int, default=3,
                         help="QA pairs per chunk")
@@ -540,6 +684,18 @@ Model presets (pass to --model):
                         help="Answer-review examples per chunk")
     parser.add_argument("--n-quiz",      type=int, default=1,
                         help="Quiz generation examples per chunk")
+    parser.add_argument("--n-paraphrase", type=int, default=0,
+                        help="Number of paraphrased question rewrites per QA pair")
+    parser.add_argument("--target-qa",       type=int, default=0,
+                        help="Stop generating QA after this many examples (0 = no limit)")
+    parser.add_argument("--target-explain",  type=int, default=0,
+                        help="Stop generating explanations after this many (0 = no limit)")
+    parser.add_argument("--target-review",   type=int, default=0,
+                        help="Stop generating reviews after this many (0 = no limit)")
+    parser.add_argument("--target-quiz",     type=int, default=0,
+                        help="Stop generating quiz_gen after this many (0 = no limit)")
+    parser.add_argument("--dedupe-threshold", type=float, default=0.9,
+                        help="Cosine similarity threshold for dedup (0 = disable)")
     parser.add_argument("--validate",    action="store_true",
                         help="Validate and preview an existing output file instead of generating")
     args = parser.parse_args()
@@ -550,6 +706,14 @@ Model presets (pass to --model):
     if args.validate:
         validate_dataset(args.output)
     else:
+        target_counts = {
+            "qa":          args.target_qa,
+            "explanation": args.target_explain,
+            "review":      args.target_review,
+            "quiz_gen":    args.target_quiz,
+        }
+        if not any(target_counts.values()):
+            target_counts = None
         generate_all_modes_local(
             chunks_json_path=args.chunks,
             output_jsonl_path=args.output,
@@ -559,4 +723,7 @@ Model presets (pass to --model):
             n_explain=args.n_explain,
             n_review=args.n_review,
             n_quiz_gen=args.n_quiz,
+            n_paraphrase=args.n_paraphrase,
+            target_counts=target_counts,
+            dedupe_threshold=args.dedupe_threshold,
         )
