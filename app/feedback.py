@@ -1,22 +1,38 @@
 # feedback.py
 """
-Long-answer review and scoring.
+Long-answer question generation and answer review/scoring.
 
 Flow:
-  1. Generate an exam-style question from course material.
-  2. Student writes a free-form answer.
-  3. Review the answer: score (1-5) and specific feedback.
+  1. generate_question  — pick a course chunk, produce an exam-style question.
+  2. Student writes a free-form answer in the UI.
+  3. review_answer      — score 1-5 and give specific feedback.
 """
 
+from __future__ import annotations
 import re
 from typing import Optional
+
+from generation import build_context
+from llm_utils import call_llm, get_context_chunks
 
 
 # =============================================================================
 # Question generation
 # =============================================================================
 
-def _build_question_gen_messages(context: str, topic: str) -> list:
+# Raw-completion prompt for custom checkpoint models
+_QUESTION_COMPLETION_PROMPT = """\
+You are an examiner for a machine learning course.
+Read the lecture material below and write ONE open-ended exam question.
+The question should require a 3-5 sentence answer and be answerable from the text.
+
+Lecture material:
+{context}
+
+Output ONLY the question, nothing else."""
+
+
+def _question_chat_messages(topic: str, context: str) -> list:
     system = (
         "You are an examiner for a university machine learning course. "
         "Generate ONE clear, open-ended exam question that a student must answer "
@@ -28,39 +44,31 @@ def _build_question_gen_messages(context: str, topic: str) -> list:
         f"Course material:\n{context}\n\n"
         "Generate one exam question about this material."
     )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user",   "content": user},
-    ]
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
-_QUESTION_GEN_PROMPT = """You are an examiner for a machine learning course.
-Read the lecture material below and write ONE open-ended exam question.
-The question should require a 3-5 sentence answer and be answerable from the text.
-
-Lecture material:
-{context}
-
-Output ONLY the question, nothing else."""
-
-
-def generate_question_for_feedback(
+def generate_question(
     retriever,
-    topic:          str   = "",
-    pretrained_pipe       = None,
-    model                 = None,
-    tokenizer             = None,
-    device:         str   = "cpu",
-    temperature:    float = 0.7,
+    topic:            str        = "",
+    pipe                         = None,
+    model                        = None,
+    tokenizer                    = None,
+    device:     str              = "cpu",
+    temperature: float           = 0.7,
+    prefetched_chunk: dict | None = None,
 ) -> Optional[str]:
     """
-    Generate an exam-style question from course material.
+    Generate an exam-style open-ended question from course material.
+
+    `topic` is used both as the retrieval query and as context for the prompt.
+    `prefetched_chunk` pins the primary context chunk when already selected
+    upstream (e.g. by the progress tracker or random scope picker).
 
     Returns the question string, or None on failure.
     """
     import random
 
-    query = topic.strip() if topic.strip() else random.choice([
+    query = topic.strip() or random.choice([
         "neural network training", "loss function optimisation",
         "regularisation dropout", "attention transformer architecture",
         "convolutional layers", "batch normalisation", "gradient descent",
@@ -68,129 +76,130 @@ def generate_question_for_feedback(
     ])
 
     try:
-        chunks  = retriever.query(query, top_k=2)
-        context = "\n---\n".join(c["text"][:400] for c in chunks[:2])
+        chunks      = get_context_chunks(retriever, query, prefetched_chunk)
+        context     = build_context(chunks)
         topic_label = (
             chunks[0].get("breadcrumb", query).split(">")[-1].strip()
             if chunks else query
         )
-    except Exception:
+    except Exception as e:
+        print(f"[feedback] context retrieval error: {e}")
         return None
 
     if not context.strip():
         return None
 
-    if pretrained_pipe is not None:
-        messages = _build_question_gen_messages(context, topic_label)
-        try:
-            result = pretrained_pipe(
-                messages,
-                max_new_tokens=80,
-                do_sample=True,
-                temperature=temperature,
-                top_p=0.9,
-                return_full_text=False,
-            )
-            raw = result[0]["generated_text"]
-            if isinstance(raw, list):
-                raw = raw[-1].get("content", "")
-            question = re.sub(r'^(?:question|q)[:\s]+', '', str(raw).strip(),
-                               flags=re.IGNORECASE)
-            return question if len(question) > 15 else None
-        except Exception as e:
-            print(f"[feedback] question gen error: {e}")
-            return None
+    messages = _question_chat_messages(topic_label, context)
+    prompt   = _QUESTION_COMPLETION_PROMPT.format(context=context)
 
-    if model is not None and tokenizer is not None:
-        import torch
-        prompt    = _QUESTION_GEN_PROMPT.format(context=context)
-        input_ids = tokenizer.encode(prompt)
-        x         = torch.tensor([input_ids], dtype=torch.long).to(device)
-        out       = model.generate(
-            x, max_new_tokens=80, temperature=temperature,
-            top_k=50, top_p=0.9, stop_token=tokenizer.eot_id,
-        )
-        generated = tokenizer.decode(out[0, len(input_ids):].tolist())
-        question  = generated.replace("<|endoftext|>", "").strip().split("\n")[0]
-        question  = re.sub(r'^(?:question|q)[:\s]+', '', question, flags=re.IGNORECASE)
-        return question if len(question) > 15 else None
+    generated = call_llm(
+        pipe=pipe, model=model, tokenizer=tokenizer, device=device,
+        messages=messages, prompt=prompt,
+        max_new_tokens=80, temperature=temperature, top_p=0.9,
+    )
+    if not generated:
+        print("[feedback] question generation returned empty text")
+        return None
 
-    return None
+    # Strip any "Question:" prefix the model might add
+    question = re.sub(r'^(?:question|q)[:\s]+', '', generated, flags=re.IGNORECASE).strip()
+    return question if len(question) > 15 else None
 
 
 # =============================================================================
-# Review prompt
+# Answer review
 # =============================================================================
 
-def build_review_prompt(
-    question:         str,
-    student_answer:   str,
-    context:          str = "",
-    reference_answer: str = "",
-) -> str:
+# Raw-completion prompt for custom checkpoint models
+_REVIEW_COMPLETION_PROMPT = """\
+Context: {context}
+Question: {question}
+Student answer: {student_answer}
+Review:"""
+
+
+def _review_chat_messages(question: str, student_answer: str, context: str) -> list:
+    system = (
+        "You are a strict but fair teaching assistant for a machine learning course. "
+        "Review the student answer. Score it 1-5 and give one specific piece of "
+        "feedback: what they got right and what they missed. "
+        "Format: Score: X/5. <feedback>"
+    )
     parts = []
     if context:
-        parts.append(f"Context: {context[:400]}")
-    if reference_answer:
-        parts.append(f"Reference answer: {reference_answer}")
-    parts.append(f"Question: {question}")
-    parts.append(f"Student answer: {student_answer}")
-    parts.append("Review:")
-    return "\n".join(parts)
+        parts.append(f"Context from course material:\n{context}")
+    parts += [f"Question: {question}", f"Student answer: {student_answer}", "Review:"]
+    return [
+        {"role": "system", "content": system},
+        {"role": "user",   "content": "\n\n".join(parts)},
+    ]
 
 
-# =============================================================================
-# Review with custom checkpoint
-# =============================================================================
-
-def review_answer_with_model(
+def review_answer(
     question:       str,
     student_answer: str,
-    rag_pipeline,
-    max_tokens:     int   = 150,
-    temperature:    float = 0.4,
-) -> dict:
-    import torch
+    retriever,
+    pipe      = None,
+    model     = None,
+    tokenizer = None,
+    device:   str   = "cpu",
+    temperature: float = 0.4,
+) -> str:
+    """
+    Review a student's free-text answer and return a formatted markdown string.
 
-    chunks  = rag_pipeline.retrieve(question)
-    context = "\n---\n".join(c["text"][:200] for c in chunks[:2])
-    prompt  = build_review_prompt(question, student_answer, context)
+    Retrieves context chunks related to the question, then calls the LLM to
+    produce a score (1-5) and targeted feedback.  The formatted result is
+    suitable for direct display in a gr.Markdown component.
+    """
+    context = ""
+    if retriever:
+        try:
+            chunks  = retriever.query(question, top_k=2)
+            context = "\n---\n".join(c["text"][:200] for c in chunks[:2])
+        except Exception:
+            pass
 
-    input_ids = rag_pipeline.tokenizer.encode(prompt)
-    x         = torch.tensor([input_ids], dtype=torch.long).to(rag_pipeline.device)
-
-    out = rag_pipeline.model.generate(
-        x,
-        max_new_tokens=max_tokens,
-        temperature=temperature,
-        top_k=40,
-        top_p=0.9,
-        stop_token=rag_pipeline.tokenizer.eot_id,
+    messages = _review_chat_messages(question, student_answer, context)
+    prompt   = _REVIEW_COMPLETION_PROMPT.format(
+        context=context[:400] if context else "",
+        question=question,
+        student_answer=student_answer,
     )
 
-    raw = rag_pipeline.tokenizer.decode(out[0, len(input_ids):].tolist())
-    return _parse_review(raw.replace("<|endoftext|>", "").strip())
+    raw = call_llm(
+        pipe=pipe, model=model, tokenizer=tokenizer, device=device,
+        messages=messages, prompt=prompt,
+        max_new_tokens=200, temperature=temperature, top_p=0.9,
+    )
+    if raw is None:
+        return "Generation error — please try again."
+
+    return _format_review(raw)
 
 
 # =============================================================================
-# Shared parsing and formatting
+# Parsing helpers
 # =============================================================================
 
-def _parse_review(raw: str) -> dict:
-    score    = 0
-    feedback = raw
-    m = re.search(r'[Ss]core[:\s]+(\d)[/\s]*5', raw)
+def _parse_score(text: str) -> tuple[int, str]:
+    """Return (score, feedback_text) extracted from a review string."""
+    m = re.search(r'[Ss]core[:\s]+(\d)[/\s]*5', text)
     if m:
-        score    = int(m.group(1))
-        feedback = raw[m.end():].strip().lstrip('.').strip()
-    elif raw and raw[0].isdigit():
-        score    = int(raw[0])
-        feedback = raw[1:].strip().lstrip('/5').lstrip('.').strip()
-    return {"score": score, "feedback": feedback, "raw": raw}
+        return int(m.group(1)), text[m.end():].strip().lstrip('.').strip()
+    if text and text[0].isdigit():
+        return int(text[0]), text[1:].strip().lstrip('/5').lstrip('.').strip()
+    return 0, text
 
 
-def format_review_for_display(review: dict) -> str:
-    score    = review.get("score", 0)
-    feedback = review.get("feedback", "No feedback generated.")
-    stars    = "★" * score + "☆" * (5 - score)
+def _format_review(raw: str) -> str:
+    """Convert raw review text into a star-rated markdown string."""
+    score, feedback = _parse_score(raw)
+    stars = "★" * score + "☆" * (5 - score)
     return f"**Score: {score}/5** {stars}\n\n{feedback}"
+
+
+def parse_score_from_markdown(formatted_md: str) -> int:
+    """Extract the numeric score from a formatted review markdown string."""
+    m = re.search(r'Score:\s*(\d)', formatted_md)
+    return int(m.group(1)) if m else 0

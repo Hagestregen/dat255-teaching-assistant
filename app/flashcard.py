@@ -2,12 +2,12 @@
 """
 Flashcard generation and deck management.
 
-Cards are two-sided: front (concept/question, <=15 words) and back
-(2-3 sentence explanation). The back is pre-generated but hidden until
+Cards are two-sided: front (concept/question, ≤15 words) and back
+(2-3 sentence explanation).  The back is pre-generated but hidden until
 the student flips the card.
 
 Deck is persisted as JSON between sessions and can be exported as a
-tab-separated CSV for Anki import (File -> Import, separator: Tab).
+tab-separated CSV for Anki import (File → Import, separator: Tab).
 """
 
 from __future__ import annotations
@@ -16,8 +16,15 @@ import json
 import re as _re
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
+from generation import build_context
+from llm_utils import call_llm, get_context_chunks
+
+
+# =============================================================================
+# Data model
+# =============================================================================
 
 @dataclass
 class Flashcard:
@@ -40,11 +47,10 @@ def flashcard_to_html(card: Flashcard, revealed: bool = False) -> str:
     back_text  = card.back  if card else ""
 
     back_inner = (
-        back_text if revealed
-        else '<span style="opacity:0.35;font-style:italic;">Flip to reveal the answer...</span>'
+        back_text if revealed else
+        '<span style="opacity:0.35;font-style:italic;">Flip to reveal the answer…</span>'
     )
-    back_blur = "" if revealed else "filter:blur(3px);pointer-events:none;"
-
+    back_blur  = "" if revealed else "filter:blur(3px);pointer-events:none;"
     topic_badge = (
         f'<span style="background:rgba(255,255,255,0.15);border-radius:6px;'
         f'padding:2px 8px;font-size:11px;letter-spacing:0.5px;">{card.topic}</span>'
@@ -73,13 +79,12 @@ def flashcard_to_html(card: Flashcard, revealed: bool = False) -> str:
 
 
 def deck_card_html(card: Flashcard, index: int, total: int, revealed: bool = False) -> str:
-    """Flashcard HTML with a card counter for deck browsing."""
-    base    = flashcard_to_html(card, revealed=revealed)
+    """Flashcard HTML with a progress counter for deck browsing."""
     counter = (
         f'<div style="text-align:center;font-size:12px;color:#888;'
         f'font-family:sans-serif;margin-top:4px;">Card {index + 1} of {total}</div>'
     )
-    return base + counter
+    return flashcard_to_html(card, revealed=revealed) + counter
 
 
 # =============================================================================
@@ -100,10 +105,9 @@ def load_deck(path: str = DEFAULT_DECK_PATH) -> List[Flashcard]:
         return []
     try:
         with open(p, encoding="utf-8") as f:
-            data = json.load(f)
-        return [Flashcard(**d) for d in data]
+            return [Flashcard(**d) for d in json.load(f)]
     except Exception as e:
-        print(f"[flashcard] Could not load deck from {path}: {e}")
+        print(f"[flashcard] could not load deck from {path}: {e}")
         return []
 
 
@@ -115,10 +119,12 @@ def append_card_to_deck(card: Flashcard, path: str = DEFAULT_DECK_PATH) -> List[
 
 
 # =============================================================================
-# Generation prompts
+# Prompts
 # =============================================================================
 
-FLASHCARD_PROMPT_TEMPLATE = """You are creating study flashcards for a machine learning course.
+# Raw-completion prompt for custom checkpoint models
+_COMPLETION_PROMPT = """\
+You are creating study flashcards for a machine learning course.
 Based on the following lecture material, create ONE flashcard about: {topic}
 
 Lecture material:
@@ -131,7 +137,7 @@ Respond ONLY with a JSON object, nothing else:
 }}"""
 
 
-def _flashcard_chat_messages(topic: str, context: str) -> list:
+def _chat_messages(topic: str, context: str) -> list:
     system = (
         "You are a flashcard generator for a machine learning course. "
         "Your only output is a single valid JSON object — no prose, no markdown fences. "
@@ -143,10 +149,7 @@ def _flashcard_chat_messages(topic: str, context: str) -> list:
         f"Base it on this lecture material:\n{context}\n\n"
         "Output only the JSON object."
     )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user",   "content": user},
-    ]
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
 # =============================================================================
@@ -182,29 +185,41 @@ def _validate_flashcard_json(data: dict) -> Optional[Flashcard]:
 # Generation
 # =============================================================================
 
-def generate_flashcard_with_pretrained(
-    topic:       str,
-    pipe,
+def generate_flashcard(
+    topic:            str,
     retriever,
-    max_retries: int   = 3,
-    temperature: float = 0.6,
+    pipe              = None,
+    model             = None,
+    tokenizer         = None,
+    device:     str   = "cpu",
+    max_retries: int  = 3,
+    temperature: float= 0.6,
+    prefetched_chunk: dict | None = None,
 ) -> Optional[Flashcard]:
-    chunks   = retriever.query(topic, top_k=2)
-    context  = "\n---\n".join(c["text"] for c in chunks[:2])[:600]
-    messages = _flashcard_chat_messages(topic, context)
+    """
+    Generate a two-sided flashcard grounded in course material.
+
+    Exactly one of `pipe` or `model`+`tokenizer` must be provided.
+    `prefetched_chunk` pins the primary context chunk (e.g. from the progress
+    tracker or random scope picker); one additional chunk is always fetched.
+    """
+    chunks   = get_context_chunks(retriever, topic, prefetched_chunk)
+    context  = build_context(chunks)[:600]
+    messages = _chat_messages(topic, context)
+    prompt   = _COMPLETION_PROMPT.format(topic=topic, context=context)
 
     for attempt in range(max_retries):
-        temp = temperature if attempt == 0 else 0.4
-        try:
-            result    = pipe(messages, max_new_tokens=200, do_sample=True,
-                             temperature=temp, top_p=0.95, return_full_text=False)
-            raw       = result[0]["generated_text"]
-            generated = (raw[-1].get("content", "") if isinstance(raw, list) else str(raw)).strip()
-        except Exception as e:
-            print(f"  Flashcard pipeline error attempt {attempt + 1}: {e}")
+        temp      = temperature if attempt == 0 else 0.4
+        generated = call_llm(
+            pipe=pipe, model=model, tokenizer=tokenizer, device=device,
+            messages=messages, prompt=prompt,
+            max_new_tokens=200, temperature=temp, top_p=0.95,
+        )
+        if generated is None:
+            print(f"  [flashcard] attempt {attempt + 1}: LLM returned None")
             continue
 
-        print(f"  [flashcard] attempt {attempt + 1} raw: {repr(generated[:100])}")
+        print(f"  [flashcard] attempt {attempt + 1} raw: {generated[:100]!r}")
         data = _extract_json(generated)
         if data:
             card = _validate_flashcard_json(data)
@@ -213,44 +228,9 @@ def generate_flashcard_with_pretrained(
                 card.source_chunk = context
                 return card
 
-        print(f"  Flashcard attempt {attempt + 1} failed. Retrying...")
+        print(f"  [flashcard] attempt {attempt + 1} failed validation, retrying…")
 
-    return None
-
-
-def generate_flashcard_with_model(
-    topic:       str,
-    model,
-    tokenizer,
-    retriever,
-    device:      str   = "cpu",
-    max_retries: int   = 3,
-    temperature: float = 0.7,
-) -> Optional[Flashcard]:
-    import torch
-    chunks  = retriever.query(topic, top_k=2)
-    context = "\n---\n".join(c["text"] for c in chunks[:2])[:600]
-    prompt  = FLASHCARD_PROMPT_TEMPLATE.format(context=context, topic=topic)
-
-    for attempt in range(max_retries):
-        temp      = temperature if attempt == 0 else 0.5
-        input_ids = tokenizer.encode(prompt)
-        x         = torch.tensor([input_ids], dtype=torch.long).to(device)
-        out       = model.generate(x, max_new_tokens=200, temperature=temp,
-                                   top_k=50, top_p=0.95, stop_token=tokenizer.eot_id)
-        generated = tokenizer.decode(out[0, len(input_ids):].tolist())
-        generated = generated.replace("<|endoftext|>", "").strip()
-
-        data = _extract_json(generated)
-        if data:
-            card = _validate_flashcard_json(data)
-            if card:
-                card.topic        = topic
-                card.source_chunk = context
-                return card
-
-        print(f"  Flashcard attempt {attempt + 1} failed. Retrying...")
-
+    print(f"  [flashcard] failed after {max_retries} attempts")
     return None
 
 

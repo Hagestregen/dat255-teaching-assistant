@@ -2,5 +2,5 @@
   "model": "BAAI/bge-base-en-v1.5",
   "device": "cuda",
   "dim": 768,
-  "num_chunks": 1198
+  "num_chunks": 1960
 }

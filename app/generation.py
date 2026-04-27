@@ -13,7 +13,8 @@ Public API:
 from __future__ import annotations
 import random
 from typing import Optional
-
+import re
+from rag.retriever import Retriever
 
 _PROBE_SEEDS = [
     "neural network architecture",
@@ -39,7 +40,7 @@ _PROBE_SEEDS = [
 ]
 
 
-def get_random_topic_from_retriever(retriever) -> str:
+def get_random_topic_from_retriever(retriever: Retriever) -> str:
     """Pick a random probe topic, query the retriever, and return the breadcrumb leaf."""
     seed = random.choice(_PROBE_SEEDS)
     try:
@@ -52,6 +53,20 @@ def get_random_topic_from_retriever(retriever) -> str:
         pass
     return seed
 
+
+def get_random_chunk_in_scope(retriever: Retriever, breadcrumb_prefix: str | None) -> dict | None:
+    """
+    Pick a random chunk whose breadcrumb starts with the given prefix.
+    If prefix is None or empty, picks from all chunks.
+    """
+    pool = retriever.chunks  # assumes retriever exposes its chunk list
+    # print(f"  [get_random_chunk_in_scope] pool: {pool!r}")
+    if breadcrumb_prefix:
+        pool = [
+            c for c in pool
+            if c.get("metadata", {}).get("breadcrumb", "").startswith(breadcrumb_prefix)
+        ]
+    return random.choice(pool) if pool else None
 
 def _build_chat_messages(question: str, context: str = "") -> list[dict]:
     system = (
@@ -127,3 +142,28 @@ def answer_question(
         return {"answer": answer.strip(), "chunks": chunks}
 
     return {"answer": "No model loaded.", "chunks": []}
+
+# def clean_context(raw: str) -> str:
+#     """Remove retriever metadata headers like [Source > Chapter > Section]."""
+#     # Drop lines that are purely the bracketed path header
+#     lines = raw.splitlines()
+#     cleaned = [
+#         line for line in lines
+#         if not re.match(r'^\s*\[.+>\s*.+\]\s*$', line)
+#     ]
+#     return "\n".join(cleaned).strip()
+def build_context(chunks: list[dict]) -> str:
+    """
+    Build the context string for the model.
+    Breadcrumb is shown as a labelled source line, clearly separated
+    from the actual content so the model doesn't echo it into questions.
+    """
+    parts = []
+    for c in chunks[:2]:
+        breadcrumb = c.get("metadata", {}).get("breadcrumb", "")
+        body       = c["text"]
+        if breadcrumb:
+            parts.append(f"Source: {breadcrumb}\n\n{body}")
+        else:
+            parts.append(body)
+    return "\n\n---\n\n".join(parts)[:600]
