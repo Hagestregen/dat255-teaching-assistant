@@ -5,7 +5,7 @@ Gradio teaching assistant.
 Tabs:
   1. Ask          — RAG-assisted free-form Q&A
   2. Quiz         — multiple-choice questions
-  3. Practice     — long-answer with scoring feedback
+  3. Long answer  — long-answer with scoring feedback
   4. Flashcards   — generate + deck browser
   5. Progress     — curriculum coverage dashboard (tracking mode only)
 
@@ -232,7 +232,13 @@ def ask_question(question: str, use_rag: bool, temperature: float):
 # Tab 2: Quiz
 # =============================================================================
 
-def new_quiz_question(topic_text: str, source: str, chapter: str, section: str):
+def new_quiz_question(topic_text: str, source: str | None, chapter: str | None, section: str | None):
+    if source is None and not (topic_text or "").strip():
+        return (
+            "",
+            "Topic cannot be empty. Please enter a topic before generating.",
+            gr.update(choices=[]), gr.update(visible=False), "",
+        )
     print(f"new_quiz_question: {topic_text!r}, {source}, {chapter}, {section}")
     global _current_quiz, _current_quiz_chunk_id
 
@@ -245,9 +251,13 @@ def new_quiz_question(topic_text: str, source: str, chapter: str, section: str):
                 gr.update(choices=[]), gr.update(visible=False), "")
 
     from quiz import generate_quiz_question
+    
+    # print(f"new_quiz_question: {topic_text!r}, {source}, {chapter}, {section}")
 
     breadcrumb_prefix, topic_override = _resolve_filter(source, chapter, section, topic_text)
     prefetched_chunk = None
+    
+    print(f"breadcrumb_prefix: {breadcrumb_prefix!r}, topic_override: {topic_override!r}")
 
     if _tracker is not None:
         result = _tracker.next_chunk(breadcrumb_prefix=breadcrumb_prefix, topic=topic_override)
@@ -318,16 +328,22 @@ def submit_quiz_answer(selected: str):
 # Tab 3: Practice answer
 # =============================================================================
 
-def generate_feedback_question(topic_text: str, source: str, chapter: str, section: str):
+def generate_feedback_question(topic_text: str, source: str | None, chapter: str | None, section: str | None):
+    if source is None and not (topic_text or "").strip():
+        return (
+            "",
+            "Topic cannot be empty. Please enter a topic before generating.",
+            gr.update(visible=False), "",
+        )
     global _current_fb_chunk_id
 
     retriever = _active_retriever()
     if retriever is None:
         return (gr.update(value="No retriever loaded.", interactive=False),
-                gr.update(visible=False), gr.update(), "")
+                gr.update(visible=False), "")
     if _pretrained_pipe is None and _pipeline is None:
         return (gr.update(value="No model loaded.", interactive=False),
-                gr.update(visible=False), gr.update(), "")
+                gr.update(visible=False), "")
 
     from feedback import generate_question
 
@@ -369,13 +385,12 @@ def generate_feedback_question(topic_text: str, source: str, chapter: str, secti
         return (
             gr.update(value="Failed to generate a question — try entering a topic manually.",
                       interactive=True),
-            gr.update(visible=False), gr.update(), status,
+            gr.update(visible=False), status,
         )
 
     return (
         gr.update(value=question, interactive=True),
         gr.update(visible=True),
-        gr.update(),   # submit button is always-on, no-op update
         status,
     )
 
@@ -423,7 +438,13 @@ def _sync_deck_from_file() -> None:
     _flashcard_deck = load_deck()
 
 
-def new_flashcard(topic_text: str, source: str, chapter: str, section: str):
+def new_flashcard(topic_text: str, source: str | None, chapter: str | None, section: str | None):
+    if source is None and not (topic_text or "").strip():
+        return (
+            "",
+            "Topic cannot be empty. Please enter a topic before generating.",
+            gr.update(choices=[]), gr.update(visible=False), "",
+        )
     global _gen_current_card, _gen_revealed
 
     retriever = _active_retriever()
@@ -729,23 +750,22 @@ def build_ui():
                 )
                 fb_submit_btn = gr.Button("Get feedback", variant="primary",
                                           visible=True, interactive=True)
-                fb_result     = gr.Markdown()
+                fb_result     = gr.Markdown(min_height=200)
 
                 fb_section_btn.click(
                     fn      = generate_feedback_question,
                     inputs  = [gr.State(""), fb_source, fb_chapter, fb_section],
-                    outputs = [fb_question, fb_answer, fb_submit_btn, fb_status],
+                    outputs = [fb_question, fb_answer, fb_status],
                 )
                 fb_topic_btn.click(
                     fn      = generate_feedback_question,
                     inputs  = [fb_topic, gr.State(None), gr.State(None), gr.State(None)],
-                    outputs = [fb_question, fb_answer, fb_submit_btn, fb_status],
+                    outputs = [fb_question, fb_answer, fb_status],
                 )
                 fb_question.change(
-                    fn      = lambda q: (gr.update(visible=bool(q.strip())),
-                                         gr.update(interactive=bool(q.strip()))),
+                    fn      = lambda q: gr.update(visible=bool(q.strip())),
                     inputs  = [fb_question],
-                    outputs = [fb_answer, fb_submit_btn],
+                    outputs = [fb_answer],
                 )
                 fb_submit_btn.click(
                     fn=review_student_answer, inputs=[fb_question, fb_answer], outputs=[fb_result],
