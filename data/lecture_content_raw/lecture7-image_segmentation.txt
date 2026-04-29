@@ -1,0 +1,26 @@
+DAT255: Deep learning engineering
+0:09
+Computer vision tasks
+8:18
+Image segmentation
+16:18
+Building a semantic segmentation model
+19:00
+Targets
+23:45
+Defining the model
+25:21
+8 x = Conv2D(256, 3, strides=2, padding="same", activa
+28:51
+Transposed convolution
+30:30
+Improved segmentation models: the U-Net
+35:54
+Net use cases
+39:21
+State-of-the-art image segmentation
+42:12
+Segment Anything 2 Demo Create video cutouts and effects…
+43:21
+ap Add effects
+45:36

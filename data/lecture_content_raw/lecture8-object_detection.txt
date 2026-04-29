@@ -1,0 +1,38 @@
+Deep learning engineering
+0:12
+Tar je Solberg
+10:24
+Counting
+14:54
+Tracking
+16:00
+Object detection is all about the bounding box
+17:12
+So how does object detection work in practice?
+20:24
+Two -stage object detection
+20:45
+Several single-stage object detectors exist
+26:03
+How does training data look like?
+27:21
+How does the original YOLO model work?
+31:30
+The YOLO model predicts (outputs) boxes, classes and a…
+32:27
+Some notes on the confidence score
+37:51
+The output tensor is S x S x (5 x B+ C)
+37:57
+Network architecture
+39:57
+Choosing a suitable loss
+43:24
+Putting it all together
+46:45
+Overlapping bounding boxes
+48:33
+Machine learning is learn by doing
+51:48
+Summary
+53:12

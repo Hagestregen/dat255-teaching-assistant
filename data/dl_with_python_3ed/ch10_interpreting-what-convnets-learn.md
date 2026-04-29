@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 10: Interpreting what ConvNets learn
 
 A fundamental problem when building a computer vision
 application is that of interpretability: Why did your classifier think

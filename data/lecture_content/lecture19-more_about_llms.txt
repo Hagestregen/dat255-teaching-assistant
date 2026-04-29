@@ -1,0 +1,15 @@
+Title: more about LLMs
+Training decoder models
+3:06
+Generating text from a decoder model
+6:42
+Softmax with temperature
+21:15
+Large language models (LLMs)
+27:00
+Training LLMs
+28:12
+Training data
+33:21
+Distributed training
+36:33

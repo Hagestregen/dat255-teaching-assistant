@@ -1,0 +1,50 @@
+DAT255: Deep learning engineering
+0:09
+Improving generalisation
+2:42
+Augmentation
+6:03
+More advanced network configurations
+14:51
+Baseline model
+15:30
+The Keras functional API
+16:51
+Example: Bird classifier
+21:06
+14 concat
+26:24
+Non -sequential networks
+33:39
+Residual connections
+35:36
+Residual networks
+50:24
+20 -layer
+55:18
+itcr. (1
+57:00
+Densely connected convolutional networks
+59:09
+Inception networks
+1:02:09
+Beyond CNNs: Vision transformers
+1:09:39
+keras.applications
+1:13:06
+Feature extraction
+1:13:15
+Fine-tuning
+1:16:48
+Classify ImageNet classes with
+1:20:48
+Extract features with
+1:21:15
+Fine-tune InceptionV3 on a new set of classes
+1:21:33
+Available models
+1:23:09
+Modern convolutional networks for computer vision
+1:23:18
+Other computer vision tasks (next week)
+1:23:45

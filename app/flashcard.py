@@ -1,0 +1,247 @@
+# flashcard.py
+"""
+Flashcard generation and deck management.
+
+Cards are two-sided: front (concept/question, ≤15 words) and back
+(2-3 sentence explanation).  The back is pre-generated but hidden until
+the student flips the card.
+
+Deck is persisted as JSON between sessions and can be exported as a
+tab-separated CSV for Anki import (File → Import, separator: Tab).
+"""
+
+from __future__ import annotations
+import csv
+import json
+import re as _re
+from dataclasses import dataclass, asdict
+from pathlib import Path
+from typing import List, Optional
+
+from generation import build_context
+from llm_utils import call_llm, get_context_chunks
+
+
+# =============================================================================
+# Data model
+# =============================================================================
+
+@dataclass
+class Flashcard:
+    front:        str
+    back:         str
+    topic:        str = ""
+    source_chunk: str = ""
+
+    def display(self) -> str:
+        return f"Front: {self.front}\n\nBack: {self.back}"
+
+
+# =============================================================================
+# HTML rendering
+# =============================================================================
+
+def flashcard_to_html(card: Flashcard, revealed: bool = False) -> str:
+    """Render a flashcard as styled HTML for gr.HTML()."""
+    front_text = card.front if card else "No card loaded"
+    back_text  = card.back  if card else ""
+
+    back_inner = (
+        back_text if revealed else
+        '<span style="opacity:0.35;font-style:italic;">Flip to reveal the answer…</span>'
+    )
+    back_blur  = "" if revealed else "filter:blur(3px);pointer-events:none;"
+    topic_badge = (
+        f'<span style="background:rgba(255,255,255,0.15);border-radius:6px;'
+        f'padding:2px 8px;font-size:11px;letter-spacing:0.5px;">{card.topic}</span>'
+        if (card and card.topic) else ""
+    )
+
+    return f"""
+<div style="font-family:'Segoe UI',system-ui,sans-serif;max-width:640px;margin:12px auto;">
+  <div style="background:linear-gradient(135deg,#1a365d 0%,#2b6cb0 100%);
+              color:#fff;border-radius:14px;padding:28px 32px 24px;
+              margin-bottom:10px;box-shadow:0 4px 18px rgba(0,0,0,0.25);min-height:110px;">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;
+                letter-spacing:1.5px;opacity:0.55;margin-bottom:10px;">QUESTION</div>
+    <div style="font-size:17px;font-weight:600;line-height:1.5;">{front_text}</div>
+    <div style="margin-top:14px;">{topic_badge}</div>
+  </div>
+  <div style="background:linear-gradient(135deg,#1a4731 0%,#2f855a 100%);
+              color:#fff;border-radius:14px;padding:28px 32px 24px;
+              box-shadow:0 4px 18px rgba(0,0,0,0.25);min-height:110px;{back_blur}">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;
+                letter-spacing:1.5px;opacity:0.55;margin-bottom:10px;">ANSWER</div>
+    <div style="font-size:15px;line-height:1.6;">{back_inner}</div>
+  </div>
+</div>
+"""
+
+
+def deck_card_html(card: Flashcard, index: int, total: int, revealed: bool = False) -> str:
+    """Flashcard HTML with a progress counter for deck browsing."""
+    counter = (
+        f'<div style="text-align:center;font-size:12px;color:#888;'
+        f'font-family:sans-serif;margin-top:4px;">Card {index + 1} of {total}</div>'
+    )
+    return flashcard_to_html(card, revealed=revealed) + counter
+
+
+# =============================================================================
+# Deck persistence
+# =============================================================================
+
+DEFAULT_DECK_PATH = "flashcards_deck.json"
+
+
+def save_deck(cards: List[Flashcard], path: str = DEFAULT_DECK_PATH) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump([asdict(c) for c in cards], f, ensure_ascii=False, indent=2)
+
+
+def load_deck(path: str = DEFAULT_DECK_PATH) -> List[Flashcard]:
+    p = Path(path)
+    if not p.exists():
+        return []
+    try:
+        with open(p, encoding="utf-8") as f:
+            return [Flashcard(**d) for d in json.load(f)]
+    except Exception as e:
+        print(f"[flashcard] could not load deck from {path}: {e}")
+        return []
+
+
+def append_card_to_deck(card: Flashcard, path: str = DEFAULT_DECK_PATH) -> List[Flashcard]:
+    deck = load_deck(path)
+    deck.append(card)
+    save_deck(deck, path)
+    return deck
+
+
+# =============================================================================
+# Prompts
+# =============================================================================
+
+# Raw-completion prompt for custom checkpoint models
+_COMPLETION_PROMPT = """\
+You are creating study flashcards for a machine learning course.
+Based on the following lecture material, create ONE flashcard about: {topic}
+
+Lecture material:
+{context}
+
+Respond ONLY with a JSON object, nothing else:
+{{
+  "front": "A short question or concept name (max 15 words)",
+  "back":  "A clear 2-3 sentence explanation of the answer or concept"
+}}"""
+
+
+def _chat_messages(topic: str, context: str) -> list:
+    system = (
+        "You are a flashcard generator for a machine learning course. "
+        "Your only output is a single valid JSON object — no prose, no markdown fences. "
+        "The JSON must have exactly two keys: "
+        "\"front\" (string, max 15 words) and \"back\" (string, 2-3 sentences)."
+    )
+    user = (
+        f"Create one flashcard about the topic: \"{topic}\"\n\n"
+        f"Base it on this lecture material:\n{context}\n\n"
+        "Output only the JSON object."
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+# =============================================================================
+# JSON helpers
+# =============================================================================
+
+def _extract_json(text: str) -> Optional[dict]:
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    match = _re.search(r'\{.*\}', text, _re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _validate_flashcard_json(data: dict) -> Optional[Flashcard]:
+    if not isinstance(data, dict):
+        return None
+    front = data.get("front", "").strip()
+    back  = data.get("back",  "").strip()
+    if len(front) < 5 or len(back) < 10:
+        return None
+    return Flashcard(front=front, back=back)
+
+
+# =============================================================================
+# Generation
+# =============================================================================
+
+def generate_flashcard(
+    topic:            str,
+    retriever,
+    pipe              = None,
+    model             = None,
+    tokenizer         = None,
+    device:     str   = "cpu",
+    max_retries: int  = 3,
+    temperature: float= 0.6,
+    prefetched_chunk: dict | None = None,
+) -> Optional[Flashcard]:
+    """
+    Generate a two-sided flashcard grounded in course material.
+
+    Exactly one of `pipe` or `model`+`tokenizer` must be provided.
+    `prefetched_chunk` pins the primary context chunk (e.g. from the progress
+    tracker or random scope picker); one additional chunk is always fetched.
+    """
+    chunks   = get_context_chunks(retriever, topic, prefetched_chunk)
+    context  = build_context(chunks)[:600]
+    messages = _chat_messages(topic, context)
+    prompt   = _COMPLETION_PROMPT.format(topic=topic, context=context)
+
+    for attempt in range(max_retries):
+        temp      = temperature if attempt == 0 else 0.4
+        generated = call_llm(
+            pipe=pipe, model=model, tokenizer=tokenizer, device=device,
+            messages=messages, prompt=prompt,
+            max_new_tokens=200, temperature=temp, top_p=0.95,
+        )
+        if generated is None:
+            print(f"  [flashcard] attempt {attempt + 1}: LLM returned None")
+            continue
+
+        print(f"  [flashcard] attempt {attempt + 1} raw: {generated[:100]!r}")
+        data = _extract_json(generated)
+        if data:
+            card = _validate_flashcard_json(data)
+            if card:
+                card.topic        = topic
+                card.source_chunk = context
+                return card
+
+        print(f"  [flashcard] attempt {attempt + 1} failed validation, retrying…")
+
+    print(f"  [flashcard] failed after {max_retries} attempts")
+    return None
+
+
+# =============================================================================
+# Export
+# =============================================================================
+
+def export_to_anki_csv(cards: List[Flashcard], path: str = "flashcards.csv") -> str:
+    """Export deck as tab-separated CSV for Anki import."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter="\t")
+        for card in cards:
+            writer.writerow([card.front, card.back])
+    return path

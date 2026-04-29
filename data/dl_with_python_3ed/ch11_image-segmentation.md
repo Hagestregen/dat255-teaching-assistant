@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 11: Image segmentation
 
 Chapter 8 gave you a first introduction to deep learning for computer vision via a simple use case: binary image classification. But there’s more to computer vision than image classification! This chapter dives deeper into another essential computer vision application — image segmentation.
 

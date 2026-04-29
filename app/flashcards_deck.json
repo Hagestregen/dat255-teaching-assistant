@@ -1,0 +1,44 @@
+[
+  {
+    "front": "Model Development Recap",
+    "back": "Remember, model development is just the beginning. Understanding the full lifecycle, from data preparation to deployment, is crucial for successful machine learning projects.",
+    "topic": "Building your model",
+    "source_chunk": "[Deep Learning with Python, Third Edition > Deploying your model > Maintaining your model]\nThis concludes the universal workflow of machine learning — that’s a lot of things to keep in mind. It takes time and experience to become an expert, but don’t worry, you’re already a lot wiser than you were a few chapters ago. You are now familiar with the big picture — the entire spectrum of what machine learning projects entail. While most of this book will focus on the model development part, you’re now aware that it’s only one part of the entire workflow. Always keep in mind the big picture!\n---\n[De"
+  },
+  {
+    "front": "ConvNets build object representations",
+    "back": "In ConvNets, features from earlier layers detect simple shapes, while deeper layers form complex object representations. Lateral connections enhance this by integrating lower-level and higher-level features.",
+    "topic": "ConvNets",
+    "source_chunk": "[Deep Learning with Python, Third Edition > Using a pretrained RetinaNet detector]\ndifferent types of simple features like edges and curves, but only later in the\nConvNet layers do we start building latent representations for entire objects.  \nThe solution used by RetinaNet is called a feature pyramid network. The final\nfeatures from the ConvNet base model are upsampled with progressive\n`Conv2DTranspose`  \nlayers, just like we saw in the previous chapter. But critically, we also\ninclude *lateral connections* where we sum these upsampled feature maps with the\nfeature maps of the same size from "
+  },
+  {
+    "front": "Keras: High-level API for NNs",
+    "back": "Keras abstracts away the backend details, allowing users to focus on building models. Works with TensorFlow, PyTorch, or JAX. Central class is Layer.",
+    "topic": "Chapter 3: Introduction to TensorFlow, PyTorch, JAX, and Keras",
+    "source_chunk": "[Deep Learning with Python > Chapter 3: Introduction to TensorFlow, PyTorch, JAX, and Keras > Summary]\n## Summary  \n- TensorFlow, PyTorch, and JAX are three popular low-level frameworks for numerical computation and autodifferentiation. They all have their own way of doing things and their own strengths and weaknesses.\n- Keras is a high-level API for building and training neural networks. It can be used with either TensorFlow, PyTorch, or JAX — just pick the backend you like best.\n- The central class of Keras is the\n`Layer`  \n. A layer encapsulates some weights and some computation. Layers are"
+  },
+  {
+    "front": "RNN processes sequences using state info",
+    "back": "An RNN maintains internal state as it iterates over sequence elements, allowing it to consider past inputs when processing current ones.",
+    "topic": "Understanding recurrent neural networks",
+    "source_chunk": "Source: Deep Learning with Python > Chapter 13: Timeseries forecasting > Recurrent neural networks > Understanding recurrent neural networks\n\nA *recurrent neural network* (RNN) adopts the same principle,\nalbeit in an extremely simplified version: it\nprocesses sequences by iterating through the sequence elements and maintaining\na *state* containing information relative to what it has seen so far. In\neffect, an RNN is a type of neural network that has an internal *loop* (see\nfigure 13.6).\n\n---\n\nSource: Deep Learning with Python > Chapter 13: Timeseries forecasting > Different kinds of timeseries"
+  },
+  {
+    "front": "Use recurrent neural networks for time series",
+    "back": "RNNs preserve the temporal structure of data; flatten or pool for other models.",
+    "topic": "Recurrent neural networks",
+    "source_chunk": "Source: Deep Learning with Python > Chapter 13: Timeseries forecasting > Recurrent neural networks\n\nNeither the fully connected approach nor the convolutional approach did well, but that doesn’t mean machine learning isn’t applicable to this problem. The densely connected approach first flattened the timeseries, which removed the notion of time from the input data. The convolutional approach treated every segment of the data in the same way, even applying pooling, which destroyed order information. Let’s instead look at the data as what it is: a sequence, where causality and order matter.\n\n---"
+  },
+  {
+    "front": "Finding optimal solutions with gradient descent",
+    "back": "It's challenging to find good solutions even if they exist within the hypothesis space. This example uses TensorFlow to handle metrics in a custom `train_step()` function.",
+    "topic": "Let’s try a basic machine learning model",
+    "source_chunk": "Source: Deep Learning with Python > Chapter 13: Timeseries forecasting > A temperature forecasting example > Let’s try a basic machine learning model\n\n. It’s like looking for a needle in a haystack. Just because a good solution technically exists in your hypothesis space doesn’t mean you’ll be able to find it via gradient descent.\n\n---\n\nSource: Deep Learning with Python > Chapter 7: A deep dive on Keras > Writing your own training and evaluation loops > Handling metrics in a custom train_step() > train_step() metrics handling with TensorFlow\n\nHere’s what it looks like with TensorFlow:  \nLet’s "
+  },
+  {
+    "front": "Carrying info across timesteps in Keras",
+    "back": "A recurrent layer allows sequences to pass information between time steps via a 'conveyor belt', enabling long-term memory similar to LSTM. This concept resembles residual connections.",
+    "topic": "A recurrent layer in Keras",
+    "source_chunk": "Source: Deep Learning with Python > Chapter 13: Timeseries forecasting > Recurrent neural networks > A recurrent layer in Keras\n\nadds a way to carry information across many timesteps. Imagine a conveyor belt\nrunning parallel to the sequence you’re processing. Information from the\nsequence can jump onto the conveyor belt at any point, be transported to a\nlater timestep, and jump off, intact, when you need it. This is essentially\nwhat LSTM does: it saves information for later, thus preventing older signals\nfrom gradually vanishing during processing.\nThis should remind you of *residual connection"
+  }
+]

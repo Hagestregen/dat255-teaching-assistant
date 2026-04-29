@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 13: Timeseries forecasting
 
 This chapter tackles timeseries, where temporal order is everything. We’ll focus on the most common and valuable timeseries task: forecasting. Using the recent past to predict the near future is a powerful capability, whether you’re trying to anticipate energy demand, manage inventory, or simply forecast the weather.
 

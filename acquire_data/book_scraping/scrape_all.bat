@@ -6,7 +6,7 @@ cd /d "%~dp0"
 
 echo ========================================
 echo Starting to scrape Deep Learning with Python 3rd Edition
-echo Chapters 3 to 20
+echo Chapters given in scrape_commands.txt
 echo ========================================
 
 if not exist scrape_commands.txt (

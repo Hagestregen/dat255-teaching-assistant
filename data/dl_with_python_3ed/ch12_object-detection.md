@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 12: Object detection
 
 Object detection is all about drawing boxes (called *bounding boxes*)
 around objects of interest in a picture (see figure 12.1). This enables you to know

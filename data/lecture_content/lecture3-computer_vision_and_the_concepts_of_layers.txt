@@ -1,0 +1,29 @@
+Title: computer vision and the concepts of layers
+Shallow learning
+10:12
+Deep learning
+11:39
+The feed-forward neural network
+15:57
+Image classification
+17:21
+Enter the convolution operation
+22:15
+Discrete convolution
+24:57
+Convolution over images
+27:15
+The convolution kernel (or filter)
+30:120
+More filters
+32:03
+Kernels for image recognition
+33:21
+Decomposition into simple patters
+36:00
+Keras layers
+41:36
+Keras 3 API documentation
+42:18
+The Conv2D layer
+45:27

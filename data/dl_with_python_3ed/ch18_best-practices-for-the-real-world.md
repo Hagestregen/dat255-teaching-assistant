@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 18: Best practices for the real world
 
 You’ve come quite far since the beginning of this book. You can now train image classification models, image segmentation models, models for classification or regression on vector data, timeseries forecasting models, text classification models, sequence-to-sequence models, and even generative models for text and images. You’ve got all the bases covered.
 

@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 7: A deep dive on Keras
 
 You’re starting to have some amount of experience with Keras. You’re
 familiar with the `Sequential`

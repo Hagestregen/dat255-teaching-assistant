@@ -1,0 +1,44 @@
+DAT255: Deep learning engineering
+0:09
+• Have
+5:21
+This week
+7:24
+Loss functions
+10:00
+where K is the number of classes
+15:33
+Gradient descent
+17:45
+Local minima
+19:09
+Welcome to multi -framework machine learning
+20:12
+A superpower for ML developers
+20:21
+Keras
+20:27
+Optimizers
+22:12
+Comparing gradient descent algorithms
+22:48
+Adagrad
+23:12
+Momentum optimisation
+25:12
+new term )wn a hill,
+26:18
+Nesterov accelerated gradient
+30:06
+AdaGrad (Adaptive Gradient)
+32:24
+arning rate, which is adjusted independently for the
+33:48
+Adam (and friends)
+35:27
+Comparison and guidelines
+38:27
+Learning rate and loss curves
+42:21
+Learning rate scheduling
+47:06

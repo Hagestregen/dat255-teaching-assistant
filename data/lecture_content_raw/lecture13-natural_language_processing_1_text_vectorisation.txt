@@ -1,0 +1,24 @@
+26V Deep learning engineering A.
+0:06
+Natural language processing (NLP)
+3:36
+NLP tasks
+7:51
+Our toolbox so far:
+11:48
+Stanford AI Index 2025
+14:09
+Getting text into our model
+16:30
+Text vectorisation
+23:12
+Fancier text vectorisation
+30:36
+Tiktokenizer
+33:12
+Detour: Bag -of-words
+36:03
+Detour: N -grams
+38:39
+Sequence models
+41:30

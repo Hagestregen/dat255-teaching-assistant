@@ -1,4 +1,8 @@
-# Deep Learning with Python, Third Edition
+---
+source: "Deep Learning with Python"
+---
+
+# Chapter 16: Text generation
 
 When I first claimed that in a not-so-distant future, most of the cultural
 content we consume would be created with substantial help from AIs, I was met

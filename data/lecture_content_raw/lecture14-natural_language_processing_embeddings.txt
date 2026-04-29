@@ -1,0 +1,82 @@
+Course plan
+0:27
+Deep learning engineering
+1:30
+From yesterday:
+1:51
+Embeddings
+3:45
+Recall we could map categorical val
+4:15
+TensorBoard
+13:12
+Embedding layers are practically the same as one-hot…
+15:42
+a Learn more about UMAP.
+23:51
+Camera
+24:09
+openly
+26:36
+Computing similarity in embedding space
+31:42
+embedding/ATTRIBUTES/VARIABLE_
+32:33
+Konto
+41:51
+Male-Female
+44:24
+Verb tense
+45:09
+Male-Female Verb ter
+46:42
+Better text tokenisation
+49:15
+individual characters and recombing the
+53:18
+y is under no obligation to make sense to us
+53:42
+The Tokenizer Playground
+54:45
+Pretrained embeddings and models
+55:33
+N LP resources
+59:30
+odules that are available as layers or models. If you Text.…
+59:54
+Hugging Face
+1:01:24
+Hugging Face deepseek
+1:02:39
+.deepseek-ai
+1:02:54
+Hugging Face gemma
+1:03:18
+Other uses of embeddings
+1:04:48
+Embed everything
+1:06:51
+Sentence embedding
+1:09:00
+Measures similarly between on entire sentence
+1:09:18
+Semantic Textual Similarity
+1:09:30
+Image embedding
+1:10:42
+ing space
+1:12:33
+Audio embedding
+1:15:45
+Encoder Block
+1:16:12
+Latent spaces
+1:17:30
+Pretrained embeddings
+1:22:51
+Measuring embedding quality
+1:23:42
+# Compute cosine similarities similarities =…
+1:24:12
+Contextualised word embeddings
+1:25:00

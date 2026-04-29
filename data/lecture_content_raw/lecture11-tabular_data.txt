@@ -1,0 +1,46 @@
+2026 VAR
+4:54
+Gradio (and Streamlit) deployment
+8:24
+Course notebooks
+8:39
+DAT255: Deep learning engineering
+9:33
+This week
+9:45
+(Some) types of data
+11:18
+Video
+12:27
+Tabular data
+13:06
+Feature normalisation
+17:12
+Normalization layer
+21:57
+Keras
+22:12
+Feature transformations
+22:39
+Compare the effect of different scalers on data with…
+26:15
+QuantileTransformer (Gaussian output)
+28:39
+Dealing with text and categorical data
+30:15
+Encoding categorical data, like blood_type:
+30:33
+Embeddings
+36:54
+3s, like diag_code:
+37:24
+• Option 2: "One-hot" encoding
+37:51
+Let's create a lookup table that maps categoric
+41:30
+For categorical data we call it entity e (later we'll look…
+44:57
+Network architectures for tabular data
+46:27
+The best model for tabular data
+49:00

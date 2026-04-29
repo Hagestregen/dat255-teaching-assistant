@@ -1,0 +1,46 @@
+DAT255: Deep learning engineering
+2:09
+Sequence-to-sequence learning
+2:30
+Positional Encoding
+8:45
+Output Probabilities
+9:03
+Vector embeddings
+10:27
+Transformers: Basic idea
+11:09
+Self-attention
+18:57
+Self-attention: The steps involved
+22:36
+Scores for `station Weighted token vectors
+26:36
+vectors
+29:24
+The query-key-value model
+35:06
+Multi -head attention
+38:33
+0.2 im 0.6 0.3 1.0 0.2 0.2
+45:51
+'bedding
+55:42
+aata matrix
+55:51
+dot-product
+1:00:57
+The Transformer architecture
+1:06:21
+odings
+1:13:30
+• Option 2: Sinusoidal encoding
+1:15:21
+Computational complexity
+1:16:54
+Transformer model structures
+1:22:09
+Encoder transformers
+1:25:03
+Encoder-decoder models
+1:27:57

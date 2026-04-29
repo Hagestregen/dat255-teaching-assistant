@@ -1,3 +1,7 @@
+# NOTE: PyTorch (torch) must be installed separately before this file.
+#   With CUDA GPU:  pip install torch --index-url https://download.pytorch.org/whl/cu124
+#   CPU only:       pip install torch
+
 # Core Hugging Face libraries for models + datasets
 transformers>=4.50.0          # or >=5.0.0 if you want the newest major version
 datasets>=3.0.0
@@ -6,15 +10,18 @@ huggingface_hub>=0.25.0       # usually pulled by the above, but good to be expl
 # Evaluation & training helpers (very commonly used)
 evaluate>=0.4.0
 accelerate>=1.0.0             # highly recommended when training / using multi-GPU / mixed precision
+optimum>=1.16.0               # speeds up HuggingFace model inference on CPU (ONNX/BetterTransformer)
 
 # Visualization & numerics (numpy usually already present via torch)
 matplotlib>=3.9.0
 seaborn>=0.13.0               # optional but very useful companion to matplotlib
 pandas>=2.2.0                 # very handy for handling datasets & results
 
-# Jupter notebook
+# Jupyter notebook
 ipykernel
+ipywidgets
 nbstripout
+
 
 # RAG libraries
 # faiss-cpu    # for CPU-based similarity search
@@ -23,16 +30,25 @@ nbstripout
 hnswlib
 sentence-transformers
 langchain-text-splitters
+langchain
 
 # Scraping libraries
-requests 
+requests
 trafilatura
 bs4
-moviepy # for mp4 to mp3 conversion (audio extraction)
-faster-whisper # for transcription of audio to text
+moviepy         # for mp4 to mp3 conversion (audio extraction)
+faster-whisper  # for transcription of audio to text
+
+# Teaching assistant model libraries
+gradio
+bitsandbytes>=0.43.0
+accelerate>=0.27.0   # needed by device_map="auto"
+
+## extra model libraries
+# wandb # for logging
 
 # Other libraries
-tiktoken # for tokenization
+tiktoken        # for tokenization
 
 # Optional but frequently used extras
 # pillow                       # image loading (usually comes with torchvision)
@@ -43,5 +59,5 @@ tiktoken # for tokenization
 # timm                         # extra backbones (sometimes used together with HF)
 
 # If you work with quantized / efficient inference
-# bitsandbytes>=0.44.0         # 8-bit / 4-bit quantization support
+# bitsandbytes>=0.44.0         # 8-bit / 4-bit quantization support (Linux/WSL only on Windows)
 # peft                         # LoRA / QLoRA / adapters
