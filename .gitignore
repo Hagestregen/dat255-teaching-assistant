@@ -1,22 +1,136 @@
-.venv
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-*.pyw
-*.pyz
-*.pywz
-*.pyzw
-*.pyzwz
-*.pyzwzw
-*.pyzwzwzw
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+build/
+dist/
+.eggs/
+pip-wheel-metadata/
 
+# =============================================================================
+# Virtual environments
+# =============================================================================
+.venv/
+venv/
+env/
+ENV/
+dat255_venv/
+
+# =============================================================================
+# Jupyter
+# =============================================================================
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+profile_default/
+ipython_config.py
+
+# =============================================================================
+# Testing / coverage / type checkers
+# =============================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# =============================================================================
+# IDEs / editors
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cursor/
+
+# =============================================================================
+# OS junk
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# Secrets / credentials  --  NEVER commit real keys
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+secrets.json
+
+# =============================================================================
+# Model checkpoints & training weights (way too large for GitHub)
+# =============================================================================
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.tflite
+
+# Whole checkpoint trees -- contain only large *.pt blobs plus tiny meta json.
+# We want the meta json to be ignorable too; if you ever need to commit the
+# tokenizer_meta.json, force-add with `git add -f`.
+checkpoints/
+model/checkpoints/
+archive/**/checkpoints/
+
+# =============================================================================
+# Experiment tracking artifacts
+# =============================================================================
+# Weights & Biases local run cache (logs, sqlite, sync state).
+wandb/
+**/wandb/
+
+# Raw stdout dumps from training/eval -- regeneratable, often huge.
+# (We KEEP runs/curves_*.json and eval/results/**/summary.json -- those are
+#  the canonical artifacts referenced from docs/experiment_tracking.md.)
+runs/*.log
+runs/screen_*.log
+archive/**/runs/*.log
+eval/results/**/run.log
+
+# =============================================================================
+# Audio / video assets (not redistributable + easy to regenerate)
+# =============================================================================
+*.mp3
+*.mp4
+*.wav
+*.flac
+*.mov
+*.mkv
+
+# =============================================================================
+# Project-specific
+# =============================================================================
+# nanoGPT submodule-style clone used as a reference, not part of this repo.
 notebooks/build_nanoGPT/build-nanogpt
 
-dat255_venv
+# Old / scratch training data superseded by model/data/splits/.
+model/data/train_old.jsonl
 
-*.mp4
+# Local-only scratch directories.
+tmp/
+.tmp/
+scratch/
 
-*.mp3
 
-*.pt
+archive/v1_data_894ex/checkpoints/
+archive/v1_data_894ex/runs/
+archive/v1_data_894ex/eval_results/
