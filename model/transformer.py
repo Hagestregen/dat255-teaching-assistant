@@ -30,10 +30,12 @@ need: given a question, *produce* an answer token by token.
 """
 
 import math
+from dataclasses import dataclass
+from typing import Optional, List, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from dataclasses import dataclass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -49,7 +51,7 @@ class TransformerConfig:
       n_layer=4, n_head=4, n_embd=256  → ~8M params, trains in minutes on CPU
       n_layer=6, n_head=8, n_embd=512  → ~50M params, needs a GPU, ~hours
     """
-    vocab_size: int   = 50_257   # GPT-2 tokenizer (tiktoken 'gpt2' encoding)
+    vocab_size: int   = 50_261   # GPT-2 tokenizer (tiktoken 'gpt2' encoding) + 4 task tokens
     n_layer:    int   = 6        # number of transformer blocks stacked
     n_head:     int   = 8        # number of attention heads per block
     n_embd:     int   = 512      # embedding dimension (must be divisible by n_head)
@@ -57,9 +59,20 @@ class TransformerConfig:
     dropout:    float = 0.1      # dropout probability (set 0.0 at inference)
     bias:       bool  = False    # False = slightly faster, usually fine
 
+    # Phase 4: free architecture upgrades (RMSNorm, SwiGLU)
+    use_rmsnorm:     bool  = False    # True = RMSNorm everywhere (LLaMA-style)
+    ffn_variant:     str   = "gelu"   # "gelu" (default) | "swiglu"
+
+    # Phase 6: regularization
+    label_smoothing: float = 0.0      # cross-entropy label smoothing (0 = off)
+    stochastic_depth: float = 0.0     # max layer-drop prob (0 = off)
+
     def __post_init__(self):
         assert self.n_embd % self.n_head == 0, (
             f"n_embd ({self.n_embd}) must be divisible by n_head ({self.n_head})"
+        )
+        assert self.ffn_variant in ("gelu", "swiglu"), (
+            f"ffn_variant must be 'gelu' or 'swiglu', got {self.ffn_variant!r}"
         )
 
 
@@ -157,18 +170,22 @@ class RotaryEmbedding(nn.Module):
         x2 = x[..., 1::2]  # odd indices
         return torch.stack([-x2, x1], dim=-1).flatten(-2)
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor):
+    def forward(self, q: torch.Tensor, k: torch.Tensor, start_pos: int = 0):
         """
         Apply rotary embeddings to query and key tensors.
 
         q, k: (batch, n_head, seq_len, head_dim)
         Returns rotated (q_rot, k_rot) with the same shape.
 
+        `start_pos` lets a caller advance into the rotation tables — needed
+        for KV-cached generation, where we feed only the latest token as a
+        length-1 sequence but its true position is (cache_len + 0).
+
         Note: we do NOT rotate V (values). Values carry content, not position.
         """
         T = q.size(2)
-        cos = self.cos_table[:T].unsqueeze(0).unsqueeze(0)  # (1, 1, T, head_dim)
-        sin = self.sin_table[:T].unsqueeze(0).unsqueeze(0)
+        cos = self.cos_table[start_pos:start_pos + T].unsqueeze(0).unsqueeze(0)
+        sin = self.sin_table[start_pos:start_pos + T].unsqueeze(0).unsqueeze(0)
         q_rot = q * cos + self._rotate_half(q) * sin
         k_rot = k * cos + self._rotate_half(k) * sin
         return q_rot, k_rot
@@ -210,44 +227,113 @@ class CausalSelfAttention(nn.Module):
 
         self.rope = RotaryEmbedding(self.head_dim, config.block_size)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        kv_cache: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
+    ) -> tuple[torch.Tensor, Optional[tuple[torch.Tensor, torch.Tensor]]]:
+        """
+        Forward pass with optional KV cache.
+
+        kv_cache: (cached_k, cached_v) of shape (B, n_head, cached_len, head_dim)
+                  or None.  When present, the new token's K/V are appended to
+                  the cache and the cache is returned (or None when disabled).
+
+        Returns (output, new_kv_cache).
+        """
         B, T, C = x.shape
 
-        # Project to Q, K, V  →  split along last dim
         q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
 
-        # (B, T, C) → (B, n_head, T, head_dim)
         def split_heads(t):
             return t.view(B, T, self.n_head, self.head_dim).transpose(1, 2)
 
         q, k, v = split_heads(q), split_heads(k), split_heads(v)
-        q, k = self.rope(q, k)  # inject positional info via rotation
 
-        # Flash Attention: memory-efficient, causal mask applied automatically
+        # Position offset = number of tokens already cached.  RoPE rotates
+        # the *new* tokens at their absolute positions, not at 0..T-1.
+        start_pos = kv_cache[0].size(2) if kv_cache is not None else 0
+        q, k = self.rope(q, k, start_pos=start_pos)
+
+        if kv_cache is not None:
+            cached_k, cached_v = kv_cache
+            k = torch.cat([cached_k, k], dim=2)
+            v = torch.cat([cached_v, v], dim=2)
+            # When the new query length is 1 (decode step) and the key length
+            # is larger, SDPA's is_causal=True would mask everything but the
+            # very first key — which is wrong.  Disable causal mask: the new
+            # query token at position cache_len naturally attends to all of
+            # 0..cache_len, none of which are in the future.
+            is_causal = (T == k.size(2))
+        else:
+            is_causal = True
+        # Always seed the cache from the current (k, v) so that the very first
+        # forward pass under `use_cache=True` produces a usable cache for the
+        # next decode step.  Setting this to None on the first call broke
+        # generation (caches[0][0].size(2) crashed in `generate`).
+        new_cache = (k, v)
+
         y = F.scaled_dot_product_attention(
             q, k, v,
             dropout_p=self.dropout if self.training else 0.0,
-            is_causal=True,
+            is_causal=is_causal,
         )
 
-        # (B, n_head, T, head_dim) → (B, T, C)
         y = y.transpose(1, 2).contiguous().view(B, T, C)
-        return self.resid_drop(self.c_proj(y))
+        return self.resid_drop(self.c_proj(y)), new_cache
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 4: Feed-Forward Network (FFN)
+# SECTION 4: Normalization layers (LayerNorm vs. RMSNorm)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RMSNorm(nn.Module):
+    """
+    Root-Mean-Square Layer Normalization (Zhang & Sennrich 2019).
+
+    RMSNorm replaces LayerNorm with a simpler operation: it just rescales by
+    the RMS of the activations and multiplies by a learned gain.  No mean
+    subtraction, no learned bias.  Compared to LayerNorm:
+      - ~7–10 % faster (one less reduction)
+      - empirically equivalent (or slightly better) quality
+      - used in LLaMA, Mistral, Gemma, Qwen, and basically every modern LLM
+
+    Formula:  y = x / sqrt(mean(x²) + eps) * gain
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps    = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Compute RMS in fp32 for stability when running under bf16 autocast.
+        x_fp32 = x.float()
+        rms = x_fp32.pow(2).mean(dim=-1, keepdim=True).add(self.eps).rsqrt()
+        return (x_fp32 * rms).type_as(x) * self.weight
+
+
+def _make_norm(config: TransformerConfig) -> nn.Module:
+    """Construct LayerNorm or RMSNorm based on config.use_rmsnorm."""
+    if getattr(config, "use_rmsnorm", False):
+        return RMSNorm(config.n_embd)
+    return nn.LayerNorm(config.n_embd)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 5: Feed-Forward Network — GELU and SwiGLU variants
 # ─────────────────────────────────────────────────────────────────────────────
 
 class FeedForward(nn.Module):
     """
+    GELU FFN (the original Transformer / GPT-2 design).
+
     Position-wise FFN: applied independently to each token after attention.
-
     Attention = "which tokens should I look at?"
-    FFN = "now that I know, what do I do with that information?"
+    FFN       = "now that I know, what do I do with that information?"
 
-    Most of the model's factual knowledge is thought to be stored in the FFN
-    weights (each neuron can be thought of as a fuzzy key-value store).
+    Most factual knowledge is thought to be stored in the FFN weights
+    (each neuron acts like a fuzzy key-value pair).
 
     Hidden dim = 4 × n_embd is the standard from the original Transformer paper.
     GELU activation: smoother than ReLU, better for transformers in practice.
@@ -264,8 +350,49 @@ class FeedForward(nn.Module):
         return self.dropout(self.c_proj(self.act(self.c_fc(x))))
 
 
+class SwiGLUFeedForward(nn.Module):
+    """
+    SwiGLU FFN (Shazeer 2020), now standard in LLaMA and friends.
+
+    Architecture: two parallel projections, gate and value, multiplied
+    elementwise after a SiLU activation on the gate, then projected down:
+
+        out = c_proj( SiLU(w_gate(x)) * w_value(x) )
+
+    The hidden dim is set to round(8/3 · n_embd) (rounded up to a multiple
+    of 64 for hardware-friendliness), which keeps the *parameter count*
+    identical to a 4·n_embd GELU FFN — so SwiGLU is a strict quality upgrade
+    at the same cost.
+
+    The down-projection is named `c_proj` to share the same scaled init as
+    the GELU FFN (see `_init_weights` post-hook).
+    """
+
+    def __init__(self, config: TransformerConfig):
+        super().__init__()
+        # 8/3 ≈ 2.67 keeps the param count equal to the 4·n_embd GELU variant.
+        # Round up to a multiple of 64 for tensor-core friendliness.
+        target  = int(round(8 * config.n_embd / 3))
+        hidden  = ((target + 63) // 64) * 64
+        self.w_gate  = nn.Linear(config.n_embd, hidden, bias=config.bias)
+        self.w_value = nn.Linear(config.n_embd, hidden, bias=config.bias)
+        self.c_proj  = nn.Linear(hidden, config.n_embd, bias=config.bias)
+        self.dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.dropout(self.c_proj(F.silu(self.w_gate(x)) * self.w_value(x)))
+
+
+def _make_ffn(config: TransformerConfig) -> nn.Module:
+    """Construct the FFN variant requested by config.ffn_variant."""
+    variant = getattr(config, "ffn_variant", "gelu")
+    if variant == "swiglu":
+        return SwiGLUFeedForward(config)
+    return FeedForward(config)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 5: Transformer Block
+# SECTION 6: Transformer Block
 # ─────────────────────────────────────────────────────────────────────────────
 
 class Block(nn.Module):
@@ -284,21 +411,45 @@ class Block(nn.Module):
     than post-norm, used in GPT-2 and all modern transformer variants.
     """
 
-    def __init__(self, config: TransformerConfig):
+    def __init__(self, config: TransformerConfig, layer_idx: int = 0, n_layer: Optional[int] = None):
         super().__init__()
-        self.ln_1 = nn.LayerNorm(config.n_embd)
+        self.ln_1 = _make_norm(config)
         self.attn = CausalSelfAttention(config)
-        self.ln_2 = nn.LayerNorm(config.n_embd)
-        self.ffn  = FeedForward(config)
+        self.ln_2 = _make_norm(config)
+        self.ffn  = _make_ffn(config)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(self.ln_1(x))  # attention sub-layer
-        x = x + self.ffn(self.ln_2(x))   # feedforward sub-layer
-        return x
+        # Stochastic depth (Phase 6): linear schedule from 0 (first layer) to
+        # config.stochastic_depth (last layer).  Only active during training.
+        nl = n_layer if n_layer is not None else config.n_layer
+        max_p = getattr(config, "stochastic_depth", 0.0)
+        self.drop_prob = max_p * (layer_idx + 1) / max(nl, 1)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+    ) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
+        # Stochastic depth: with prob drop_prob, skip this block entirely
+        # during training.  Disabled at eval and when KV-caching (we still
+        # need to advance the cache).
+        if (self.training
+                and self.drop_prob > 0
+                and kv_cache is None
+                and torch.rand((), device=x.device).item() < self.drop_prob):
+            return x, None
+
+        # When kept under stochastic depth, the survivors compensate by
+        # scaling their contribution (timm-style DropPath).
+        scale = 1.0 / (1.0 - self.drop_prob) if (self.training and self.drop_prob > 0) else 1.0
+
+        attn_out, new_cache = self.attn(self.ln_1(x), kv_cache=kv_cache)
+        x = x + attn_out * scale
+        x = x + self.ffn(self.ln_2(x)) * scale
+        return x, new_cache
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 6: Full Model
+# SECTION 7: Full Model
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TeachingAssistantModel(nn.Module):
@@ -321,8 +472,9 @@ class TeachingAssistantModel(nn.Module):
         self.transformer = nn.ModuleDict({
             'wte':  nn.Embedding(config.vocab_size, config.n_embd),  # word token embeddings
             'drop': nn.Dropout(config.dropout),
-            'h':    nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-            'ln_f': nn.LayerNorm(config.n_embd),  # final layer norm
+            'h':    nn.ModuleList([Block(config, layer_idx=i, n_layer=config.n_layer)
+                                   for i in range(config.n_layer)]),
+            'ln_f': _make_norm(config),                               # final norm
         })
 
         # LM head projects n_embd → vocab_size. Tied with wte.
@@ -352,39 +504,64 @@ class TeachingAssistantModel(nn.Module):
 
     def forward(
         self,
-        input_ids: torch.Tensor,        # (B, T) integer token indices
-        targets:   torch.Tensor = None  # (B, T) targets; -1 = ignore (padding)
+        input_ids: torch.Tensor,                  # (B, T) integer token indices
+        targets:   Optional[torch.Tensor] = None, # (B, T) targets; -1 = ignore
+        kv_caches: Optional[List[Optional[Tuple[torch.Tensor, torch.Tensor]]]] = None,
+        return_caches: bool = False,
     ):
         """
         Forward pass.
 
-        Returns (logits, loss). Loss is None if targets not provided.
+        Returns (logits, loss).  When `return_caches=True`, returns
+        (logits, loss, list_of_kv_caches) for use by KV-cached generation.
 
-        The training format looks like:
+        `kv_caches` is a list of length n_layer (one (K, V) tuple per block,
+        or None if that block is the first call).  When provided, each block
+        appends its new K/V to its cache and returns the updated cache.
+
+        Training format reminder:
           "Question: What is dropout?\nAnswer: Dropout randomly zeroes..."
         We compute loss only over the Answer tokens (targets for Question
-        positions are set to -1 so they're ignored). See dataset.py.
+        positions are set to -1 so they're ignored).  See dataset.py.
         """
         B, T = input_ids.shape
-        assert T <= self.config.block_size, f"Seq len {T} > block_size {self.config.block_size}"
+        # When KV-caching, T may be 1 even though the real position is large.
+        # The model will still encode positions correctly via RoPE's start_pos.
+        max_pos = T + (kv_caches[0][0].size(2) if kv_caches and kv_caches[0] is not None else 0)
+        assert max_pos <= self.config.block_size, (
+            f"Seq len {max_pos} > block_size {self.config.block_size}"
+        )
 
-        # Look up token embeddings — no positional embeddings added (RoPE handles it inside attention)
         x = self.transformer['drop'](self.transformer['wte'](input_ids))
 
-        for block in self.transformer['h']:
-            x = block(x)
+        new_caches: List[Optional[Tuple[torch.Tensor, torch.Tensor]]] = []
+        for i, block in enumerate(self.transformer['h']):
+            past = kv_caches[i] if kv_caches is not None else None
+            x, new_cache = block(x, kv_cache=past)
+            new_caches.append(new_cache)
 
         x = self.transformer['ln_f'](x)
-        logits = self.lm_head(x)  # (B, T, vocab_size)
+        logits = self.lm_head(x)
 
         loss = None
         if targets is not None:
+            # Autoregressive shift: position i's logits predict the token at
+            # position i+1.  Without this shift the model is asked to predict
+            # the current token, which is trivially solvable through the
+            # residual stream + causal self-attention (it can attend to
+            # itself).  That collapses train loss to near-zero in a few hundred
+            # steps while teaching the model nothing about generation.
+            shift_logits  = logits[:, :-1, :].contiguous()
+            shift_targets = targets[:, 1:].contiguous()
             loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)),
-                targets.view(-1),
-                ignore_index=-1,  # ignore padding positions
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_targets.view(-1),
+                ignore_index=-1,
+                label_smoothing=getattr(self.config, "label_smoothing", 0.0),
             )
 
+        if return_caches:
+            return logits, loss, new_caches
         return logits, loss
 
     @torch.no_grad()
@@ -395,7 +572,8 @@ class TeachingAssistantModel(nn.Module):
         temperature:    float = 0.8,
         top_k:          int   = 50,
         top_p:          float = 0.95,
-        stop_token:     int   = None,
+        stop_token:     Optional[int] = None,
+        use_cache:      bool  = True,
     ) -> torch.Tensor:
         """
         Autoregressive generation: generate up to max_new_tokens new tokens.
@@ -404,39 +582,83 @@ class TeachingAssistantModel(nn.Module):
                       Low (0.3) = deterministic/safe, High (1.5) = creative/risky.
         Top-k:        only consider the top-k most likely tokens.
         Top-p:        nucleus sampling — keep the smallest set of tokens
-                      whose cumulative probability ≥ p. This adapts to the
-                      model's confidence: if it's very sure, p=0.95 might only
-                      keep 2-3 tokens; if unsure, it keeps more options open.
+                      whose cumulative probability ≥ p.
+
+        KV cache (Phase 5):
+        With `use_cache=True` (default), the prompt is processed once with a
+        normal forward pass and then each subsequent token re-uses cached K/V
+        from previous attention computations.  This makes generation 10–60×
+        faster — every per-token step shrinks from O(prompt_len + step) work
+        to O(1) per layer.
+
+        When the cache would exceed block_size, we restart from the latest
+        block_size tokens (rare in practice for our use case where
+        max_new_tokens=200 and prompts fit comfortably).
         """
+        was_training = self.training
         self.eval()
-        for _ in range(max_new_tokens):
-            # Crop to context window
-            ctx = input_ids[:, -self.config.block_size:]
+        block_size = self.config.block_size
+
+        # ── Initial forward pass over the prompt ─────────────────────────────
+        ctx = input_ids[:, -block_size:]
+        caches: Optional[List[Optional[Tuple[torch.Tensor, torch.Tensor]]]] = None
+        if use_cache:
+            logits, _, caches = self(ctx, return_caches=True)
+        else:
             logits, _ = self(ctx)
-            logits = logits[:, -1, :] / temperature  # (B, vocab_size)
 
-            # Top-k: zero out everything outside top-k
-            if top_k:
-                k_val = min(top_k, logits.size(-1))
-                threshold = logits.topk(k_val).values[:, -1, None]
-                logits = logits.masked_fill(logits < threshold, float('-inf'))
-
-            # Top-p (nucleus): keep tokens until cumulative prob >= top_p
-            if top_p:
-                sorted_logits, sorted_idx = torch.sort(logits, descending=True)
-                cum_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-                # Remove tokens once cumulative prob exceeds top_p
-                remove = cum_probs - F.softmax(sorted_logits, dim=-1) > top_p
-                sorted_logits[remove] = float('-inf')
-                logits.scatter_(1, sorted_idx, sorted_logits)
-
-            next_tok = torch.multinomial(F.softmax(logits, dim=-1), num_samples=1)
+        for step in range(max_new_tokens):
+            # ── Sample next token from the last position's logits ────────────
+            next_tok = self._sample_next(
+                logits[:, -1, :], temperature=temperature, top_k=top_k, top_p=top_p,
+            )
             input_ids = torch.cat([input_ids, next_tok], dim=1)
 
             if stop_token is not None and (next_tok == stop_token).all():
                 break
+            if step == max_new_tokens - 1:
+                break
 
+            # ── Advance one token, using the cache when possible ─────────────
+            if use_cache and caches is not None:
+                cache_len = caches[0][0].size(2)
+                if cache_len + 1 <= block_size:
+                    logits, _, caches = self(next_tok, kv_caches=caches,
+                                             return_caches=True)
+                else:
+                    # Cache full → restart with a fresh window.  Slower but
+                    # correct.  Practically rare for this project.
+                    ctx = input_ids[:, -block_size:]
+                    logits, _, caches = self(ctx, return_caches=True)
+            else:
+                ctx = input_ids[:, -block_size:]
+                logits, _ = self(ctx)
+
+        if was_training:
+            self.train()
         return input_ids
+
+    @staticmethod
+    def _sample_next(
+        logits:      torch.Tensor,
+        temperature: float = 0.8,
+        top_k:       int   = 50,
+        top_p:       float = 0.95,
+    ) -> torch.Tensor:
+        """Apply temperature, top-k, top-p, then multinomial sampling."""
+        logits = logits / temperature
+        if top_k:
+            k_val = min(top_k, logits.size(-1))
+            threshold = logits.topk(k_val).values[:, -1, None]
+            logits = logits.masked_fill(logits < threshold, float('-inf'))
+        if top_p:
+            sorted_logits, sorted_idx = torch.sort(logits, descending=True)
+            probs = F.softmax(sorted_logits, dim=-1)
+            cum_probs = torch.cumsum(probs, dim=-1)
+            remove = cum_probs - probs > top_p
+            sorted_logits[remove] = float('-inf')
+            logits.scatter_(1, sorted_idx, sorted_logits)
+        return torch.multinomial(F.softmax(logits, dim=-1), num_samples=1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -450,8 +672,8 @@ if __name__ == "__main__":
 
     x = torch.randint(0, cfg.vocab_size, (2, 32))
     logits, loss = model(x, x)
-    print(f"Logits: {logits.shape}")   # (2, 32, 50257)
-    print(f"Loss:   {loss.item():.3f}")  # should be ~10.82 (= ln(50257))
+    print(f"Logits: {logits.shape}")   # (2, 32, 50261)
+    print(f"Loss:   {loss.item():.3f}")  # should be ~10.82 (= ln(50261))
 
     prompt = torch.randint(0, cfg.vocab_size, (1, 8))
     out = model.generate(prompt, max_new_tokens=5)

@@ -53,7 +53,7 @@ markdown_splitter = MarkdownHeaderTextSplitter(
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=PASS2_CHUNK_SIZE,
     chunk_overlap=PASS2_CHUNK_OVERLAP,
-    separators=["\n\n", "\n", ". ", " ", ""], # Add "?" and "!" to the separators to split on question marks and exclamation marks
+    separators=["\n\n", "\n", ". ","?", "!", " ", ""], # Add "?" and "!" to the separators to split on question marks and exclamation marks
 )
 
 
