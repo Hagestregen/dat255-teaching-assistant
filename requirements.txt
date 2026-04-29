@@ -38,6 +38,7 @@ trafilatura
 bs4
 moviepy         # for mp4 to mp3 conversion (audio extraction)
 faster-whisper  # for transcription of audio to text
+pymupdf         # for extracting text from PDFs
 
 # Teaching assistant model libraries
 gradio
@@ -45,7 +46,7 @@ bitsandbytes>=0.43.0
 accelerate>=0.27.0   # needed by device_map="auto"
 
 ## extra model libraries
-# wandb # for logging
+wandb # for logging
 
 # Other libraries
 tiktoken        # for tokenization
@@ -59,5 +60,6 @@ tiktoken        # for tokenization
 # timm                         # extra backbones (sometimes used together with HF)
 
 # If you work with quantized / efficient inference
-# bitsandbytes>=0.44.0         # 8-bit / 4-bit quantization support (Linux/WSL only on Windows)
-# peft                         # LoRA / QLoRA / adapters
+bitsandbytes>=0.44.0         # 8-bit / 4-bit quantization support (Linux/WSL only on Windows)
+peft                         # LoRA / QLoRA / adapters
+trl

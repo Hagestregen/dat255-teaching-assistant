@@ -1,0 +1,267 @@
+{
+  "metadata": {
+    "source_pdf": "DAT255_V25_ordinær_løsningsforslag.pdf",
+    "extraction_tool": "pymupdf",
+    "num_questions": 16
+  },
+  "questions": [
+    {
+      "question_number": 1,
+      "points": 1,
+      "question_text": "When building a network to solve a regression task, which activation function should typically be used in the output layer?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "No activation (linear)",
+        "B": "ReLU",
+        "C": "Softmax",
+        "D": "Tanh"
+      },
+      "correct_answer": [
+        "A"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 2,
+      "points": 1,
+      "question_text": "Evaluate the following expression: ReLU(−3) =",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "-3",
+        "B": "0",
+        "C": "3",
+        "D": "9"
+      },
+      "correct_answer": [
+        "B"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 3,
+      "points": 1,
+      "question_text": "What is the result of performing a max pooling operation on the following array? [ ] 6 3 4 7",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "3",
+        "B": "5",
+        "C": "7",
+        "D": "20"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 4,
+      "points": 1,
+      "question_text": "Suppose we build a neural network consisting of a single layer with 3 nodes, and an output layer with one node. The input data has 5 features. Counting both weights and biases, how many trainable parameters does the network have?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "8",
+        "B": "18",
+        "C": "22",
+        "D": "29",
+        "E": "32"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 5,
+      "points": 1,
+      "question_text": "What is the primary purpose of convolutional layers in computer vision models?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "To reduce the dimensionality of the input data by downsampling pixels",
+        "B": "To normalize the input pixel values so that they have mean equal to 0 and variance equal to 1",
+        "C": "To detect patterns in input images by applying learnable filters to all possible positions in the image",
+        "D": "To detect patterns by applying non-linear transformations to all pixel values"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 6,
+      "points": 1,
+      "question_text": "How can we add dropout regularisation to a Keras model? Dense(units=32, dropout_rate=0.4)",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "By setting the dropout_rate  parameter in a Dense  layer, for instance",
+        "B": "By adding a keras.layers.Dropout  layer after a Dense  layer",
+        "C": "By configuring it in the compile()  method",
+        "D": "By adding an instance of keras.callbacks.Dropout  as a callback in the fit()  method"
+      },
+      "correct_answer": [
+        "B"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 7,
+      "points": 1,
+      "question_text": "During model training, we observe that the loss value oscillates, like shown below. What can be a cause of this issue, and how can we improve it? more stochastic. rate.",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "The model is too strongly regularised. Reduce or remove regularisation.",
+        "B": "The optimiser is stuck in a local minimum. Reduce the batch size to make the gradient descent steps",
+        "C": "The shape of the batched data does not match the model's expected input shape. Reformat the batches.",
+        "D": "The learning rate is too high, and the optimiser is jumping around the minimum. Reduce the learning"
+      },
+      "correct_answer": [
+        "D"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 8,
+      "points": 1,
+      "question_text": "In the context of deep learning models, what is a latent space?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "A space where data is stored before being processed by the model",
+        "B": "A memory buffer used for storing training data",
+        "C": "A lower-dimensional representation of input data, learned by the model",
+        "D": "The resulting vector space after performing one-hot-encoding of categorical features"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 9,
+      "points": 1,
+      "question_text": "What number of dimensions consitute valid input to an RNN layer, such as keras.layers.LSTM?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "1 (the batch dimension)",
+        "B": "2 (the batch dimension and the time dimension)",
+        "C": "3 (the batch dimension, the time dimension, and the feature dimension)",
+        "D": "Any dimension greater or equal to 1 is valid"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 10,
+      "points": 1,
+      "question_text": "We have constructed a very deep neural network, but struggle to train it. Investigations show that the gradients of the loss function are always close to zero. How can the network be modified to improve the situation?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Use a saturating activation function, such as sigmoid or tanh",
+        "B": "Apply L2 regularisation to the network weights",
+        "C": "Add residual (skip) connections between layers",
+        "D": "Add pooling layers to downsample the intermediate representations"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 11,
+      "points": 1,
+      "question_text": "Why does deep learning benefit from using GPUs (Graphics Processing Units) or similar hardware accelerators? computations predictions in a deep learning model deep learning (such as matrix multiplications) in parallel",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "GPU cores have higher clock speeds per core than CPU, enabling faster processing of sequential",
+        "B": "GPUs are optimised for complex conditional branching and control flow, which is critical to compute",
+        "C": "GPUs have larger memory cache, which reduces data access latency for the large datasets used in",
+        "D": "GPUs have a large number of cores, allowing them to perform a large number of identical computations"
+      },
+      "correct_answer": [
+        "D"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 12,
+      "points": 1,
+      "question_text": "What is the main difference between a variational autoencoder (VAE) and a traditional autoencoder? continuous one",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "VAEs require labeled data for training, while traditional autoencoders are unsupervised",
+        "B": "VAEs learn probability distributions in the latent space, while traditional autoencoders learn fixed points",
+        "C": "VAEs encode the input into a discrete latent representation, while traditional autoencoders use a",
+        "D": "VAEs are designed for classification tasks, while traditional autoencoders are used for regression tasks"
+      },
+      "correct_answer": [
+        "B"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 13,
+      "points": 1,
+      "question_text": "We want to perform a targeted adversarial attack against an image classification model, so that when it is given a certain input image, it confidently predicts the wrong class. How can we achieve this? the loss maximise the loss",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Compute gradients of the loss with respect to the image pixels, then adjust the pixel values to maximise",
+        "B": "Randomly adjust pixel values by adding noise sampled from a uniform distribution",
+        "C": "Randomly adjust pixel values by multiplying with noise sampled from a normal distribution",
+        "D": "Compute gradients of the loss function with respect to the model weights, then adjust model weights to"
+      },
+      "correct_answer": [
+        "A"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 14,
+      "points": 1,
+      "question_text": "A common approach to deploying a LLM-based chatbot application is to separate it into a frontend server that displays the application, and a backend server that runs the language model. The two communicate via a REST API. What are two (2) benefits of this approach? Select both correct answers. Communication over a REST API ensures low latency The computational load of running the LLM can be split between the two servers The backend server can continuously retrain the LLM as new data comes is Communication between the frontend and backend server is end-to-end (E2E) encrypted, which preserves privacy for the user",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "We can switch between different models without downtime",
+        "B": "We can scale the capacity of the two servers independently"
+      },
+      "correct_answer": [
+        "A",
+        "B"
+      ],
+      "num_answers": 2,
+      "model_answer": null
+    },
+    {
+      "question_number": 15,
+      "points": 3,
+      "question_text": "Explain the self-attention mechanism, and how it is used in Transformer-type language models.",
+      "question_type": "open_ended",
+      "options": null,
+      "correct_answer": null,
+      "num_answers": 0,
+      "model_answer": "Answers should at minimum state that self-attention is a way to compute relations between words in a sentence, and that these are used in Transformers to infer (semantic) meaning from context. Better answers include that the attention score between two tokens is computed by taking the dot product between the (embedded) token vectors, and that the attention scores are used as weights to create a new context-aware vector for each token position. Ideally the answer should also include the generalisation into the key-query-value model token vectors are processed by different Dense layers before attention is computed, forming an attention head. Writing the attention mechanism in equation form is not expected."
+    },
+    {
+      "question_number": 16,
+      "points": 3,
+      "question_text": "Select one (1) of the example tasks below, and motivate why deep learning is a good choice for solving this task. Recommend a type of model architecture that would be suitable, and explain how you would try to find the optimal model complexity — so that it is big enough to perform well, but not so big it overfits on the training data. • Image classification • Time series forecasting • Text classification (i.e. sentiment analysis)",
+      "question_type": "open_ended",
+      "options": null,
+      "correct_answer": null,
+      "num_answers": 0,
+      "model_answer": "Here 1 point is assigned to each of the three parts of the question -- one for motivating DL as a solution, one for identifying a suitable model, and one for explaining how to find the optimal complexity. There is no true answer to either, so emphasis is given to showing reasoning based on knowledge from the course. We expect an answer on the first part to include an explanation on how DL can identify patterns at different spatial and/or temporal hierarchies, and do automatic feature engineering. The third part is more of a general ML question and must include something about evaluating models on a statistically independent dataset."
+    }
+  ]
+}

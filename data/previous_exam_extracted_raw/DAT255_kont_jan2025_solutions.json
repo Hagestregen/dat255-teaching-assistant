@@ -1,0 +1,237 @@
+{
+  "metadata": {
+    "source_pdf": "DAT255_kont_jan2025_solutions.pdf",
+    "extraction_tool": "pymupdf",
+    "num_questions": 14
+  },
+  "questions": [
+    {
+      "question_number": 1,
+      "points": 1,
+      "question_text": "What is the primary goal of backpropagation in neural networks?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "To update the weights and biases to minimize the loss function",
+        "B": "To increase the number of hidden layers",
+        "C": "To initialize the weights and biases randomly",
+        "D": "To propagate the input data through the network and compute predictions",
+        "E": "To optimise the hyperparameters of the network"
+      },
+      "correct_answer": [
+        "A"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 2,
+      "points": 1,
+      "question_text": "What is a common problem when using sigmoid activation functions in the hidden layers of a neural network?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Saturating activation functions can lead to exploding gradients",
+        "B": "Saturating activation functions can lead to vanishing gradients",
+        "C": "Sigmoid activation functions are incompatible with dropout regularisation",
+        "D": "The range of output values from the sigmoid function is incompatible with classification tasks"
+      },
+      "correct_answer": [
+        "B"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 3,
+      "points": 1,
+      "question_text": "When should data augmentation typically be applied?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Only during training",
+        "B": "Only during validation",
+        "C": "Only during testing",
+        "D": "During both training and testing"
+      },
+      "correct_answer": [
+        "A"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 4,
+      "points": 1,
+      "question_text": "What is the purpose of using batch normalisation layers?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "To increase the model complexity",
+        "B": "To reduce the model complexity",
+        "C": "To speed up convergence",
+        "D": "To remove the need for bias terms"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 5,
+      "points": 1,
+      "question_text": "In the context of deep learning optimizers, which of the following best describes the Momentum algorithm?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "It adjusts the learning rate on a per-parameter basis",
+        "B": "It uses second-order derivatives to optimize the loss function",
+        "C": "It adapts the learning rate based on sparsity of the gradient",
+        "D": "It accumulates a velocity vector, and uses this to compute the next step"
+      },
+      "correct_answer": [
+        "D"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 6,
+      "points": 1,
+      "question_text": "We apply a convolutional layer with kernel size 3×3, stride 1, and no padding, to an input image that has size 5×5 pixels. What are the dimensions of the output? We ignore the batch and channel dimensions.",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "5×5",
+        "B": "4×4",
+        "C": "3×3",
+        "D": "2×2",
+        "E": "1×1"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 7,
+      "points": 1,
+      "question_text": "Which of the following statements is true about embedding layers?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Embedding layers are used for dimensionality reduction of continuous numerical data",
+        "B": "Embedding layers learn representations where similar items tend to have similar embedding vectors",
+        "C": "Embedding layers can only be used as the first layer in a neural network",
+        "D": "Embedding layers require the input data to be normalized between 0 and 1"
+      },
+      "correct_answer": [
+        "B"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 8,
+      "points": 1,
+      "question_text": "Which of the following architectures is specifically designed for image segmentation?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "ResNet",
+        "B": "Inception network",
+        "C": "U-Net",
+        "D": "DenseNet",
+        "E": "Xception network"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 9,
+      "points": 1,
+      "question_text": "Which architectural element in an LSTM cell helps preserve long-term information?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Convolutional filter",
+        "B": "Attention mechanism",
+        "C": "Memory cell with input/forget/output gates",
+        "D": "Batch normalization layer"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 10,
+      "points": 1,
+      "question_text": "What is the output of an autoencoder model?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "A class label for the input data",
+        "B": "A compressed latent representation",
+        "C": "A probability distribution over possible classes",
+        "D": "A reconstruction of the input data"
+      },
+      "correct_answer": [
+        "D"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 11,
+      "points": 1,
+      "question_text": "How can we perform an targeted adversarial attack against a machine learning model?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "By reducing the model's learning rate during training",
+        "B": "By adding specific, small perturbations to the input data",
+        "C": "By adding layers from the model to increase its capacity",
+        "D": "By removing layers from the model to reduce its capacity"
+      },
+      "correct_answer": [
+        "B"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 12,
+      "points": 1,
+      "question_text": "Which of the following tasks is a variational autoencoder particularly well-suited for?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Object detection in images",
+        "B": "Generating new samples similar to training data",
+        "C": "Binary classification tasks",
+        "D": "Multi-label classification tasks",
+        "E": "Time series prediction"
+      },
+      "correct_answer": [
+        "B"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 13,
+      "points": 5,
+      "question_text": "Explain how convolutional layers work in a computer vision model, and why they are more effective than fully connected (Dense) layers for vision tasks.",
+      "question_type": "open_ended",
+      "options": null,
+      "correct_answer": null,
+      "num_answers": 0,
+      "model_answer": null
+    },
+    {
+      "question_number": 14,
+      "points": 5,
+      "question_text": "Describe a challenge you faced while working on the deep learning project, and how you used methods and techniques relevant to the material in DAT255 to solve it.",
+      "question_type": "open_ended",
+      "options": null,
+      "correct_answer": null,
+      "num_answers": 0,
+      "model_answer": null
+    }
+  ]
+}

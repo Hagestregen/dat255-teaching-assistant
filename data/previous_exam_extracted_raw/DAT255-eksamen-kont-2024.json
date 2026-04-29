@@ -1,0 +1,282 @@
+{
+  "metadata": {
+    "source_pdf": "DAT255-eksamen-kont-2024.pdf",
+    "extraction_tool": "pymupdf",
+    "num_questions": 19
+  },
+  "questions": [
+    {
+      "question_number": 1,
+      "points": 1,
+      "question_text": "I konteksten av trening av nevrale nettverk, hva refererer begrepet 'epoch' til? / In the context of training neural networks, what does the term 'epoch' refer to? Antall lag i nettverket / The number of layers in the network dataset Antall nevroner i et lag / The number of neurons in a layer Tiden det tar å trene modellen / The time taken to train the model",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Én fullstendig gjennomgang av hele treningsdatasettet / One complete pass through the entire training"
+      },
+      "correct_answer": [
+        "A"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 2,
+      "points": 1,
+      "question_text": "Hva refererer begrepet \"learning rate\" til i konteksten av trening av et nevralt nettverk? / What does the term \"learning rate\" refer to in the context of training a neural network? Prosentandelen av data reservert for validering under trening / The percentage of data reserved for validation during training weights during backpropagation Hastigheten som treningseksempler mates inn i nettverket / The rate at which training examples are fed into the network Antall treningsepoker som kreves for å oppnå konvergens / The number of training epochs required to achieve convergence",
+      "question_type": "multiple_choice",
+      "options": {
+        "B": "Skrittlengden som brukes for å oppdatere vekter under backpropagation / The step size used for updating"
+      },
+      "correct_answer": [
+        "B"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 3,
+      "points": 1,
+      "question_text": "Hvilken av følgende aktiveringsfunksjoner er mest brukt i skjulte lag i dype nevrale nettverk på grunn av dens evne til å redusere problemet med forsvinnende gradienter? / Which of the following activation functions is most commonly used in hidden layers of deep neural networks due to its ability to mitigate the vanishing gradient problem?",
+      "question_type": "multiple_choice",
+      "options": {
+        "A": "Sigmoid",
+        "B": "Hyperbolic Tangent (tanh)",
+        "C": "Rectified Linear Unit (ReLU)",
+        "D": "Softmax"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 4,
+      "points": 1,
+      "question_text": "Hva er hovedformålet med å bruke dropout under trening av et nevralt nettverk? / Which of the following is a primary purpose of applying dropout during the training of a neural network? Å akselerere trening ved å redusere antall trenbare parametere / To accelerate training by reducing the number of trainable parameters Å forbedre modellytelsen ved å fokusere på de viktigste egenskapene / To improve model performance by focusing on the most important features randomly deactivating neurons during training Å øke nettverkets kapasitet ved å dynamisk legge til flere lag / To increase the network's capacity by adding more layers dynamically",
+      "question_type": "multiple_choice",
+      "options": {
+        "C": "Å forhindre overtilpasning ved å tilfeldig deaktivere nevroner under trening / To prevent overfitting by"
+      },
+      "correct_answer": [
+        "C"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 5,
+      "points": 1,
+      "question_text": "Hvilke av følgende påstander om batch-størrelse i trening av nevrale nettverk er korrekte? Velg alle som gjelder. / Which of the following statements about batch size in neural network training are correct? Select all that apply. lokale minima / Smaller batch sizes can lead to noisier gradient updates, which may help escape local minima. sizes often require more memory but provide more stable gradient updates. Mindre batch-størrelser reduserer alltid treningstiden sammenlignet med større batch-størrelser / Smaller batch sizes always reduce training time compared to larger batch sizes. make better use of hardware acceleration for training.",
+      "question_type": "multiple_choice",
+      "options": {
+        "D": "Mindre batch-størrelser kan føre til mer støyende gradientoppdateringer, som kan hjelpe med å unnslippe",
+        "E": "Større batch-størrelser krever ofte mer minne men gir mer stabile gradientoppdateringer / Larger batch",
+        "F": "Større batch-størrelser kan utnytte maskinvareakselerasjon bedre for trening / Larger batch sizes can"
+      },
+      "correct_answer": [
+        "D",
+        "E",
+        "F"
+      ],
+      "num_answers": 3,
+      "model_answer": null
+    },
+    {
+      "question_number": 6,
+      "points": 1,
+      "question_text": "I et Konvolusjonelt Nevralt Nettverk (CNN), hva er hovedformålet med pooling-laget? / In a Convolutional Neural Network (CNN), what is the primary purpose of the pooling layer? dimensionality of the feature maps while preserving important information Å introdusere ikke-linearitet i modellen / To introduce non-linearity into the model Å øke antallet trenbare parametere i nettverket / To increase the number of trainable parameters in the network Å normalisere feature maps til en standard skala / To normalize the feature maps to a standard scale",
+      "question_type": "multiple_choice",
+      "options": {
+        "G": "Å redusere dimensjonaliteten av feature maps mens viktig informasjon bevares / To reduce the"
+      },
+      "correct_answer": [
+        "G"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 7,
+      "points": 1,
+      "question_text": "Hvilke av følgende strategier kan hjelpe med å redusere overtilpasning i en deep learning-modell? Velg alle som gjelder. / Which of the following strategies can help reduce overfitting in a deep learning model? Select all that apply. Øke antall lag i modellen / Increasing the number of layers in the model",
+      "question_type": "multiple_choice",
+      "options": {
+        "H": "Samle inn mer treningsdata / Collecting more training data",
+        "I": "Benytte data-augmentering / Applying data augmentation"
+      },
+      "correct_answer": [
+        "H",
+        "I"
+      ],
+      "num_answers": 2,
+      "model_answer": null
+    },
+    {
+      "question_number": 8,
+      "points": 1,
+      "question_text": "Hva er fordelene med å bruke transfer learning i deep learning-prosjekter? Velg alle som gjelder. / What are the benefits of using transfer learning in deep learning projects? Select all that apply. training process by using pre-trained models Gir alltid bedre ytelse enn trening fra bunnen av / Always results in better performance than training from scratch",
+      "question_type": "multiple_choice",
+      "options": {
+        "J": "Reduserer mengden merket data som trengs for trening / Reduces the amount of labeled data needed for",
+        "K": "Øker hastigheten på treningsprosessen ved å bruke forhåndstrente modeller / Speeds up the training",
+        "L": "Tillater finjustering av modeller for spesifikke oppgaver / Allows fine-tuning models for specific tasks"
+      },
+      "correct_answer": [
+        "J",
+        "K",
+        "L"
+      ],
+      "num_answers": 3,
+      "model_answer": null
+    },
+    {
+      "question_number": 9,
+      "points": 1,
+      "question_text": "Hvilke av følgende er vanlige teknikker brukt i data-augmentering for bildedatasett? Velg alle som gjelder. / Which of the following are common techniques used in data augmentation for image datasets? Select all that apply. Feature scaling",
+      "question_type": "multiple_choice",
+      "options": {
+        "M": "Random cropping",
+        "N": "Rotation",
+        "O": "Horizontal flipping"
+      },
+      "correct_answer": [
+        "M",
+        "N",
+        "O"
+      ],
+      "num_answers": 3,
+      "model_answer": null
+    },
+    {
+      "question_number": 10,
+      "points": 1,
+      "question_text": "Hvilke av følgende påstander om tapsfunksjoner i nevrale nettverk er korrekte? Velg alle som gjelder. / Which of the following statements about loss functions in neural networks are correct? Select all that apply. loss is commonly used for regression tasks. Cross-entropy-loss brukes utelukkende for binær klassifikasjon / The cross-entropy loss is used exclusively for binary classification problems. Tapsfunksjoner brukes kun under evalueringsfasen av et nevralt nettverk / Loss functions are only used during the evaluation phase of a neural network. functions measure how well the model's predictions align with the ground truth during training.",
+      "question_type": "multiple_choice",
+      "options": {
+        "P": "Mean squared error (MSE)-loss er vanlig brukt for regresjonsoppgaver / The mean squared error (MSE)",
+        "Q": "Tapsfunksjoner måler hvor godt modellens prediksjoner samsvarer med fasit under trening / Loss"
+      },
+      "correct_answer": [
+        "P",
+        "Q"
+      ],
+      "num_answers": 2,
+      "model_answer": null
+    },
+    {
+      "question_number": 11,
+      "points": 1,
+      "question_text": "Hvilke av følgende teknikker kan brukes til å tolke og visualisere prediksjonene til et konvolusjonelt nevralt nettverk (CNN)? Velg alle som gjelder. / Which of the following techniques can be used to interpret and visualize the predictions of a convolutional neural network (CNN)? Select all that apply. Batch Normalization Data-augmentering / Data Augmentation",
+      "question_type": "multiple_choice",
+      "options": {
+        "R": "Grad-CAM (Gradient-weighted Class Activation Mapping)",
+        "S": "Feature maps fra mellomliggende lag / Feature maps from intermediate layers"
+      },
+      "correct_answer": [
+        "R",
+        "S"
+      ],
+      "num_answers": 2,
+      "model_answer": null
+    },
+    {
+      "question_number": 12,
+      "points": 1,
+      "question_text": "Hvilken av følgende nevrale nettverksarkitekturer er best egnet for sekvensdata, som tekst eller tidsserier? / Which of the following neural network architectures is best suited for sequence data, such as text or time series? Convolutional Neural Networks (CNNs) Generative Adversarial Networks (GANs) Fully Connected Networks (FCNs)",
+      "question_type": "multiple_choice",
+      "options": {
+        "T": "Recurrent Neural Networks (RNNs)"
+      },
+      "correct_answer": [
+        "T"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 13,
+      "points": 1,
+      "question_text": "I fastai, hva er hovedformålet med one-cycle policy? / In fastai, what is the primary purpose of the one-cycle policy? learning rate during training Å justere batch-størrelsen gjennom treningen / To adjust the batch size throughout training Å modifisere modellarkitekturen under trening / To modify the model architecture during training Å kontrollere antall epoker automatisk / To control the number of epochs automatically",
+      "question_type": "multiple_choice",
+      "options": {
+        "U": "Å gradvis øke og deretter redusere læringsraten under trening / To gradually increase then decrease the"
+      },
+      "correct_answer": [
+        "U"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 14,
+      "points": 1,
+      "question_text": "Hvilke av følgende beskriver best Progressive Resizing i fastai? / Which of the following best describes Progressive Resizing in fastai? and gradually increasing them Justerer automatisk modellens arkitektur basert på bildestørrelse / Automatically adjusts the model's architecture based on image size Fungerer kun med forhåndstrente modeller / Only works with pretrained models Krever manuell reskalering av hele datasettet før trening / Requires manual resizing of the entire dataset before training",
+      "question_type": "multiple_choice",
+      "options": {
+        "V": "Starter trening med mindre bildestørrelser og øker dem gradvis / Starting training with smaller image sizes"
+      },
+      "correct_answer": [
+        "V"
+      ],
+      "num_answers": 1,
+      "model_answer": null
+    },
+    {
+      "question_number": 15,
+      "points": 1,
+      "question_text": "Du bruker fastai til å trene en bildemodell og møter følgende feil under trening: / You're using fastai to train a vision model and encounter the following error during training: RuntimeError: CUDA out of memory. Tried to allocate 2.45 GB. GPU 0 has a total capacity of 8 GB. Hvilke av følgende kodeendringer ville mest effektivt løse dette problemet mens modellytelsen opprettholdes? Velg alle som gjelder. / Which of the following code changes would most effectively address this issue while maintaining model performance? Select all that apply. DataLoader(batch_size=16) Øke antall workers i DataLoader til 8 / Increasing the number of workers in DataLoader to 8 Sette device='cuda:0'  eksplisitt i Learner / Setting device='cuda:0'  explicitly in the Learner",
+      "question_type": "multiple_choice",
+      "options": {
+        "W": "Redusere batch-størrelsen ved å bruke DataLoader(batch_size=16)  / Reducing the batch size using",
+        "X": "Bruke mixed precision training med to_fp16()  / Using mixed precision training with to_fp16()"
+      },
+      "correct_answer": [
+        "W",
+        "X"
+      ],
+      "num_answers": 2,
+      "model_answer": null
+    },
+    {
+      "question_number": 16,
+      "points": 4,
+      "question_text": "Scenario: Du har fått i oppgave å bygge en bildeklassifiseringsmodell for å skille mellom 10 typer blomster. Datasettet er relativt lite, med bare 1000 merkede bilder (omtrent 100 bilder per klasse). For å håndtere dette, bestemmer du deg for å bruke en forhåndstrent deep learning-modell gjennom transfer learning. Oppgave: 1. Modellvalg og begrunnelse (2p): Velg en spesifikk forhåndstrent modellarkitektur (f.eks. ResNet, VGG, eller MobileNet) for denne oppgaven Begrunn valget ditt ved å vurdere: • Modellkompleksitet vs. datastørrelse • Transfer learning-potensial fra ImageNet-fortrening • Beregningsmessige krav Forklar de spesifikke fordelene med transfer learning for dette blomsterklassifiseringsproblemet 2. Implementeringsstrategi (2p): Beskriv din fullstendige implementeringstilnærming, inkludert: a) Dataforberedelses- og augmenteringsstrategi b) Modelltilpasningstrinn: • Hvordan du vil modifisere den forhåndstrente arkitekturen • Hvilke lag du vil fryse/tine og hvorfor c) Treningstilnærming: • Valg av optimizer og tapsfunksjon med begrunnelse • Strategier for å forhindre overtilpasning gitt det lille datasettet • Valideringsstrategi / Scenario: You are tasked with building an image classification model to distinguish between 10 types of flowers. The dataset is relatively small, with only 1,000 labeled images (approximately 100 images per class). To address this, you decide to use a pre-trained deep learning model through transfer learning. Task: 1. Model Selection and Justification (2p): Choose a specific pre-trained model architecture (e.g., ResNet, VGG, or MobileNet) for this task Justify your choice by considering: • Model complexity vs. dataset size • Transfer learning potential from ImageNet pre-training • Computational requirements Explain the specific benefits of transfer learning for this flower classification problem. 2. Implementation Strategy (2p): Describe your complete implementation approach, including: a) Data preparation and augmentation strategy b) Model adaptation steps: • How you'll modify the pre-trained architecture • Which layers you'll freeze/unfreeze and why c) Training approach: • Choice of optimizer and loss function with justification • Strategies to prevent overfitting given the small dataset • Validation strategy",
+      "question_type": "open_ended",
+      "options": null,
+      "correct_answer": null,
+      "num_answers": 0,
+      "model_answer": null
+    },
+    {
+      "question_number": 17,
+      "points": 2,
+      "question_text": "Vurder følgende scenario: Under trening observerer du at tapet først reduseres, men deretter oscillerer uregelmessig uten videre forbedring. Basert på denne observasjonen, hvilke justeringer ville du gjøre til læringsraten? Begrunn svaret ditt. / Consider the following scenario: During training, you observe that the loss decreases initially but then oscillates erratically without further improvement. Based on this observation, what adjustments would you make to the learning rate? Justify your answer.",
+      "question_type": "open_ended",
+      "options": null,
+      "correct_answer": null,
+      "num_answers": 0,
+      "model_answer": null
+    },
+    {
+      "question_number": 18,
+      "points": 2,
+      "question_text": "I konteksten av fastai's data-augmentering for computer vision: a) Forklar hva item_tfms  og batch_tfms  er og hvordan de er forskjellige b) Gi TO eksempler på transformasjoner som ville være passende for hver type c) Forklar HVORFOR du ville velge disse spesifikke transformasjonene og hvilke problemer de hjelper å løse / In the context of fastai's data augmentation for computer vision: a) Explain what item_tfms  and batch_tfms  are and how they differ b) Give TWO examples of transforms that would be appropriate for each type c) Explain WHY you would choose these specific transforms and what problems they help solve",
+      "question_type": "open_ended",
+      "options": null,
+      "correct_answer": null,
+      "num_answers": 0,
+      "model_answer": null
+    },
+    {
+      "question_number": 19,
+      "points": 2,
+      "question_text": "Gi en teknisk forklaring på et begrep eller en idé fra DAT255 som ikke er dekket av de øvrige eksamensspørsmålene. Du står fritt til å velge noe du selv finner interessant eller viktig. / Give a technical explanation of a concept or idea from DAT255 that is not covered by the other exam questions. You are free to choose something that you find interesting or important.",
+      "question_type": "open_ended",
+      "options": null,
+      "correct_answer": null,
+      "num_answers": 0,
+      "model_answer": null
+    }
+  ]
+}
