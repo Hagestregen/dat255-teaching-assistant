@@ -45,7 +45,12 @@ bitsandbytes>=0.43.0
 accelerate>=0.27.0   # needed by device_map="auto"
 
 ## extra model libraries
-# wandb # for logging
+wandb              # experiment tracking (Phase B/C of the experiment plan)
+
+## evaluation metrics
+bert-score         # semantic similarity via DeBERTa embeddings
+nltk               # METEOR (also pulls in wordnet + omw-1.4 corpora at runtime)
+sentencepiece      # tokenizer required by DeBERTa-v3 (used by bert-score)
 
 # Other libraries
 tiktoken        # for tokenization

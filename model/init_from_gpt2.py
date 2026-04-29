@@ -61,9 +61,15 @@ _HF_CONV1D_PARAMS = (
 
 
 def gpt2_compatible_config() -> TransformerConfig:
-    """Return a TransformerConfig that matches GPT-2 small's geometry."""
+    """
+    Return a TransformerConfig that matches GPT-2 small's geometry but uses
+    the project's extended vocabulary (50257 GPT-2 tokens + 4 task-type
+    special tokens added in dataset.py).  The first 50257 embeddings are
+    filled from GPT-2; the last 4 stay at their random init and are learned
+    during fine-tuning.
+    """
     return TransformerConfig(
-        vocab_size=50_257,
+        vocab_size=50_261,     # GPT-2 (50257) + 4 task tokens
         n_layer=12,
         n_head=12,
         n_embd=768,
@@ -98,7 +104,13 @@ def load_gpt2_into(
     assert cfg.use_rmsnorm is False, "GPT-2 init requires LayerNorm (use_rmsnorm=False)"
     assert cfg.ffn_variant == "gelu", "GPT-2 init requires ffn_variant='gelu'"
     assert cfg.bias is True,         "GPT-2 init requires bias=True"
-    assert cfg.vocab_size == 50_257, "GPT-2 init requires vocab_size=50257"
+    # GPT-2 small ships with 50257 token embeddings.  Our project vocabulary
+    # is 50261 (50257 + 4 task-type special tokens).  We accept any vocab
+    # ≥ 50257 and copy GPT-2 weights into the first 50257 rows; the rest
+    # remain at their random init and are learned during fine-tuning.
+    assert cfg.vocab_size >= 50_257, (
+        f"GPT-2 init requires vocab_size >= 50257, got {cfg.vocab_size}"
+    )
 
     if verbose:
         print(f"Loading {hf_model_id} from HuggingFace…")
@@ -113,11 +125,24 @@ def load_gpt2_into(
     n_loaded  = 0
     n_skipped = 0
 
-    # ── Token embeddings (no transpose; same shape) ───────────────────────────
-    own_state["transformer.wte.weight"].copy_(hf_state["transformer.wte.weight"])
+    # ── Token embeddings (no transpose) ──────────────────────────────────────
+    # Copy HF's 50257 rows into the first 50257 rows of our (potentially
+    # larger) embedding table.  Any extra rows (50257..vocab_size-1) keep
+    # their random initialisation so the new task tokens start from a fresh
+    # learnable embedding.
+    hf_wte  = hf_state["transformer.wte.weight"]
+    own_wte = own_state["transformer.wte.weight"]
+    n_hf_vocab = hf_wte.size(0)
+    own_wte[:n_hf_vocab].copy_(hf_wte)
     n_loaded += 1
     if verbose:
-        print("  loaded transformer.wte.weight (token embeddings)")
+        n_extra = own_wte.size(0) - n_hf_vocab
+        msg = f"  loaded transformer.wte.weight ({n_hf_vocab} GPT-2 rows"
+        if n_extra > 0:
+            msg += f"; left {n_extra} extra rows at random init for added task tokens)"
+        else:
+            msg += ")"
+        print(msg)
     # We deliberately ignore transformer.wpe.weight (GPT-2's learned absolute
     # positions) — our model uses RoPE.
 

@@ -51,7 +51,7 @@ class TransformerConfig:
       n_layer=4, n_head=4, n_embd=256  → ~8M params, trains in minutes on CPU
       n_layer=6, n_head=8, n_embd=512  → ~50M params, needs a GPU, ~hours
     """
-    vocab_size: int   = 50_257   # GPT-2 tokenizer (tiktoken 'gpt2' encoding)
+    vocab_size: int   = 50_261   # GPT-2 tokenizer (tiktoken 'gpt2' encoding) + 4 task tokens
     n_layer:    int   = 6        # number of transformer blocks stacked
     n_head:     int   = 8        # number of attention heads per block
     n_embd:     int   = 512      # embedding dimension (must be divisible by n_head)
@@ -259,7 +259,6 @@ class CausalSelfAttention(nn.Module):
             cached_k, cached_v = kv_cache
             k = torch.cat([cached_k, k], dim=2)
             v = torch.cat([cached_v, v], dim=2)
-            new_cache = (k, v)
             # When the new query length is 1 (decode step) and the key length
             # is larger, SDPA's is_causal=True would mask everything but the
             # very first key — which is wrong.  Disable causal mask: the new
@@ -267,8 +266,12 @@ class CausalSelfAttention(nn.Module):
             # 0..cache_len, none of which are in the future.
             is_causal = (T == k.size(2))
         else:
-            new_cache = None
             is_causal = True
+        # Always seed the cache from the current (k, v) so that the very first
+        # forward pass under `use_cache=True` produces a usable cache for the
+        # next decode step.  Setting this to None on the first call broke
+        # generation (caches[0][0].size(2) crashed in `generate`).
+        new_cache = (k, v)
 
         y = F.scaled_dot_product_attention(
             q, k, v,
@@ -389,7 +392,7 @@ def _make_ffn(config: TransformerConfig) -> nn.Module:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 5: Transformer Block
+# SECTION 6: Transformer Block
 # ─────────────────────────────────────────────────────────────────────────────
 
 class Block(nn.Module):
@@ -446,7 +449,7 @@ class Block(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 6: Full Model
+# SECTION 7: Full Model
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TeachingAssistantModel(nn.Module):
@@ -542,9 +545,17 @@ class TeachingAssistantModel(nn.Module):
 
         loss = None
         if targets is not None:
+            # Autoregressive shift: position i's logits predict the token at
+            # position i+1.  Without this shift the model is asked to predict
+            # the current token, which is trivially solvable through the
+            # residual stream + causal self-attention (it can attend to
+            # itself).  That collapses train loss to near-zero in a few hundred
+            # steps while teaching the model nothing about generation.
+            shift_logits  = logits[:, :-1, :].contiguous()
+            shift_targets = targets[:, 1:].contiguous()
             loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)),
-                targets.view(-1),
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_targets.view(-1),
                 ignore_index=-1,
                 label_smoothing=getattr(self.config, "label_smoothing", 0.0),
             )
@@ -661,8 +672,8 @@ if __name__ == "__main__":
 
     x = torch.randint(0, cfg.vocab_size, (2, 32))
     logits, loss = model(x, x)
-    print(f"Logits: {logits.shape}")   # (2, 32, 50257)
-    print(f"Loss:   {loss.item():.3f}")  # should be ~10.82 (= ln(50257))
+    print(f"Logits: {logits.shape}")   # (2, 32, 50261)
+    print(f"Loss:   {loss.item():.3f}")  # should be ~10.82 (= ln(50261))
 
     prompt = torch.randint(0, cfg.vocab_size, (1, 8))
     out = model.generate(prompt, max_new_tokens=5)

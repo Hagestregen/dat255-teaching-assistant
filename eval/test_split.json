@@ -1,0 +1,596 @@
+[
+  {
+    "question": "Explain the bias-variance tradeoff in the context of model complexity.",
+    "answer": "The bias-variance tradeoff represents the balance between underfitting (high bias) and overfitting (high variance). Increasing model complexity can reduce bias but may lead to higher variance, and finding the right tradeoff is crucial for optimal model performance.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "Explain the concept of precision-recall tradeoff in machine learning.",
+    "answer": "The precision-recall tradeoff refers to the inverse relationship between precision and recall in binary classification. Increasing one metric often leads to a decrease in the other. Balancing the tradeoff depends on the specific requirements of the application.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "How does the concept of class imbalance affect the performance of machine learning models, and what strategies can be employed to address it?",
+    "answer": "Class imbalance can lead to biased models favoring the majority class. Strategies include resampling techniques (oversampling or undersampling), using different evaluation metrics (precision, recall, F1 score), and employing specialized algorithms like cost-sensitive learning.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "What is ensemble learning, and how does it improve model performance?",
+    "answer": "Ensemble learning involves combining the predictions of multiple models to create a stronger and more accurate model. Techniques like bagging (e.g., Random Forest) and boosting (e.g., AdaBoost) are common approaches to ensemble learning.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "What is the difference between precision and recall, and when might you prioritize one over the other?",
+    "answer": "Precision measures the accuracy of positive predictions, while recall measures the ability to capture all positive instances. The choice between precision and recall depends on the specific application; for example, in medical diagnoses, high recall may be prioritized to avoid missing positive cases.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "Explain the concept of batch normalization in deep learning.",
+    "answer": "Batch normalization normalizes the input of each layer in a neural network to have zero mean and unit variance. It helps stabilize and accelerate the training process by reducing internal covariate shift and mitigating vanishing/exploding gradient problems.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "Explain the concept of overfitting in machine learning.",
+    "answer": "Overfitting occurs when a machine learning model learns the training data too well, capturing noise or random fluctuations. As a result, the model may perform poorly on new, unseen data because it has essentially memorized the training set.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "What is the purpose of the term \"dropout\" in convolutional neural networks (CNNs)?",
+    "answer": "Dropout in CNNs involves randomly deactivating a fraction of neurons during training. This prevents overfitting and helps the model generalize better to new, unseen data by reducing reliance on specific features.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "What is a hyperparameter in machine learning?",
+    "answer": "A hyperparameter is a configuration setting external to the model that cannot be learned from the data. Examples include learning rates, regularization strengths, and the number of hidden layers in a neural network.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "What is the purpose of the term \"bag-of-words\" in natural language processing?",
+    "answer": "Bag-of-words is a text representation technique that disregards word order and focuses on word frequency. It represents a document as an unordered set of words, creating a \"bag\" that captures the frequency of each word.",
+    "source": "prsdm_ml_qa",
+    "context": ""
+  },
+  {
+    "question": "Can you explain why deep learning models might not generalize well?",
+    "answer": "Deep learning models are like huge pattern databases, but they can struggle to apply what they've learned to new situations because the patterns they learn are often very specific to the training data they were given.",
+    "source": "../data/dl_with_python_3ed/ch20_conclusion.md",
+    "context": ""
+  },
+  {
+    "question": "How does JAX's stateless nature benefit its performance?",
+    "answer": "JAX's stateless nature benefits its performance by making it highly performant and scalable, which allows for compilation and automatic performance optimizations.",
+    "source": "../data/dl_with_python_3ed/ch07_deep-dive-keras.md",
+    "context": ""
+  },
+  {
+    "question": "What percentage of test accuracy might one achieve after writing thousands of lines of code for classifying MNIST digits without machine learning?",
+    "answer": "One might achieve around 90% test accuracy.",
+    "source": "../data/dl_with_python_3ed/ch19_future_of_ai.md",
+    "context": ""
+  },
+  {
+    "question": "What is the main limitation of the Sequential model?",
+    "answer": "The Sequential model can only express models with a single input and a single output, applying one layer after the other in a sequential fashion.",
+    "source": "../data/dl_with_python_3ed/ch07_deep-dive-keras.md",
+    "context": ""
+  },
+  {
+    "question": "What are the key factors that influence a model's ability to generalize?",
+    "answer": "A model's ability to generalize comes almost entirely from the properties of the data it is trained on, including the number of data points, the reliability of labels, and the quality of features.",
+    "source": "../data/dl_with_python_3ed/ch06_universal-workflow-of-ml.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain what Alan Turing thought about computers and human intelligence?",
+    "answer": "Alan Turing believed that computers had the potential to mimic every aspect of human thinking. This idea was quite revolutionary because it suggested that machines could not only perform calculations but also think and reason like humans.",
+    "source": "../data/dl_with_python_3ed/ch01_what_is_deep_learning.md",
+    "context": ""
+  },
+  {
+    "question": "What kind of neural network components are typically involved in backpropagation?",
+    "answer": "Neural networks that consist of many tensor operations chained together, each with a simple, known derivative, are typically involved in backpropagation.",
+    "source": "../data/dl_with_python_3ed/ch02_mathematical-building-blocks.md",
+    "context": ""
+  },
+  {
+    "question": "How does machine learning differ from statistics?",
+    "answer": "Machine learning differs from statistics in several important ways, similar to how medicine differs from chemistry.",
+    "source": "../data/dl_with_python_3ed/ch01_what_is_deep_learning.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain the difference between bfloat16 and float16?",
+    "answer": "Sure! Both bfloat16 and float16 are 16-bit precision types, but bfloat16 has 8 exponent bits and 7 mantissa bits, whereas float16 has 5 exponent bits and 10 mantissa bits. This means bfloat16 can represent a wider range of numbers but with less precision compared to float16.",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "What is an example of the size of these 2D windows in convolution layers?",
+    "answer": "An example of the size of these 2D windows is 3 × 3.",
+    "source": "../data/dl_with_python_3ed/ch08_image-classification.md",
+    "context": ""
+  },
+  {
+    "question": "Do state-of-the-art LLMs learn exact addition algorithms?",
+    "answer": "No, state-of-the-art LLMs do not learn exact addition algorithms, even after seeing millions of examples.",
+    "source": "../data/dl_with_python_3ed/ch19_future_of_ai.md",
+    "context": ""
+  },
+  {
+    "question": "Does the type of data affect the preprocessing techniques used?",
+    "answer": "Yes, many preprocessing techniques are domain specific, such as specific to text data or image data.",
+    "source": "../data/dl_with_python_3ed/ch06_universal-workflow-of-ml.md",
+    "context": ""
+  },
+  {
+    "question": "Why can this approach become a bottleneck?",
+    "answer": "This can become a bottleneck, especially if the output of the first layer is large, as it risks keeping the GPUs idle.",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "What will the model learn to differentiate in the images?",
+    "answer": "The model will learn to differentiate between the main subject and its background.",
+    "source": "../data/dl_with_python_3ed/ch11_image-segmentation.md",
+    "context": ""
+  },
+  {
+    "question": "What kind of embedding were they building?",
+    "answer": "They were building a pretrained embedding called 'Word2Vec'.",
+    "source": "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md",
+    "context": ""
+  },
+  {
+    "question": "What is the maximum length used to truncate IMDb reviews?",
+    "answer": "The maximum length used to truncate IMDb reviews is 600 words.",
+    "source": "../data/dl_with_python_3ed/ch14_text-classification.md",
+    "context": ""
+  },
+  {
+    "question": "What operations are used to update the carry track in the LSTM cell?\nStudent answer: The operations used to update the carry track in the LSTM cell are the multiplication of `c_t` and `f_t` (forget gate) and the addition of `i_t` (input gate) to update the cell state.",
+    "answer": "Score: 3/5. You correctly stated that the multiplication of `c_t` and `f_t` is part of the forget gate, but missed the input gate `k_t`, which is also crucial for updating the cell state.",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "What approach dominated until the 1990s?",
+    "answer": "Handcrafted rules held out as the dominant approach well into the 1990s.",
+    "source": "../data/dl_with_python_3ed/ch14_text-classification.md",
+    "context": ""
+  },
+  {
+    "question": "What does `dtype` represent in tensors?",
+    "answer": "`dtype` represents the type of the data contained in the tensor; for instance, it could be `float16`, `float32`, `float64`, `uint8`, `bool`, etc.",
+    "source": "../data/dl_with_python_3ed/ch02_mathematical-building-blocks.md",
+    "context": ""
+  },
+  {
+    "question": "Is the content of the lecture relevant for someone interested in fundamental research?",
+    "answer": "Yes, the content is especially interesting for someone who wants to get into fundamental research.",
+    "source": "../data/dl_with_python_3ed/ch19_future_of_ai.md",
+    "context": ""
+  },
+  {
+    "question": "What method is used for generating these heatmaps according to the lecture material?",
+    "answer": "Grad-CAM is used, which involves taking the output feature map of a convolution layer and weighting every channel by the gradient of the class with respect to the channel.",
+    "source": "../data/dl_with_python_3ed/ch10_interpreting-what-convnets-learn.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain why data is more important than algorithms in improving a model's generalization ability?",
+    "answer": "The lecture emphasizes that a model's ability to generalize is primarily influenced by the characteristics of the data it is trained on, such as the number of data points, label reliability, and feature quality. Therefore, investing time in collecting more high-quality data can be more beneficial than trying to fine-tune the algorithm.",
+    "source": "../data/dl_with_python_3ed/ch06_universal-workflow-of-ml.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain the Backpropagation algorithm mentioned in the text?",
+    "answer": "Backpropagation is the key process in training neural networks. It calculates the error between the network's output and the desired output, then adjusts the weights in the network to reduce this error, helping the network learn from its mistakes.",
+    "source": "../data/dl_with_python_3ed/ch01_what_is_deep_learning.md",
+    "context": ""
+  },
+  {
+    "question": "Why is scaling the targets important?",
+    "answer": "Scaling the targets is important because it ensures that the model's prediction can match the target values more easily, avoiding the need for very large weight values.",
+    "source": "../data/dl_with_python_3ed/ch04_classification-and-regression.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about ConvNets.",
+    "answer": "{\"question\": \"Which statement best describes the primary advantage of using ConvNets in computer vision tasks?\", \"options\": [\"ConvNets cannot handle small datasets effectively.\", \"ConvNets require a large amount of data to perform well.\", \"ConvNets can learn hierarchical representations of visual data efficiently.\", \"ConvNets are only useful for tasks outside of computer vision.\"], \"correct_index\": 2, \"explanation\": \"ConvNets are designed to learn a hierarchy of modular patterns and concepts, making them efficient for computer vision tasks even with limited data.\"}",
+    "source": "../data/dl_with_python_3ed/ch08_image-classification.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain what the experiment about trying different numbers of representation layers means?",
+    "answer": "Sure! The experiment involves changing the number of representation layers (from one to two to three) before the final classification layer to see how it impacts the model's performance on validation and test sets.",
+    "source": "../data/dl_with_python_3ed/ch04_classification-and-regression.md",
+    "context": ""
+  },
+  {
+    "question": "What is the purpose of the attention mask?",
+    "answer": "The purpose of the attention mask is to mark all the non-padding tokens in the inputs and uprank it to shape (batch_size, 1, source_length) to use as an attention_mask.",
+    "source": "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md",
+    "context": ""
+  },
+  {
+    "question": "Is the word order crucial for understanding language?",
+    "answer": "Although word order does matter in understanding language, which order you use isn’t crucial.",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "What is forecasting?",
+    "answer": "Forecasting is the process of predicting future events or values based on historical data.",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "What is the purpose of implementing a custom `compute_loss()` method in this model?\nStudent answer: The purpose of implementing a custom `compute_loss()` method is to ensure the model can work with any backend framework, but I forgot to mention that it allows for flexibility in the loss function calculation.",
+    "answer": "Score: 3/5. You correctly stated that the custom `compute_loss()` method allows for flexibility in the backend framework, but you missed mentioning its importance for the loss function calculation which is crucial for training the model.",
+    "source": "../data/dl_with_python_3ed/ch17_image-generation.md",
+    "context": ""
+  },
+  {
+    "question": "What is the typical machine learning workflow as described in chapter 6?",
+    "answer": "The typical machine learning workflow as described in chapter 6 includes several steps, but it's not explicitly detailed in the given text.",
+    "source": "../data/dl_with_python_3ed/ch20_conclusion.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about masked language modeling.",
+    "answer": "{\"question\": \"What does a masked language model attempt to predict during training?\", \"options\": [\"p(tokens|all tokens)\", \"p(token|surrounding tokens)\", \"p(token|future tokens)\", \"p(token|past tokens)\"], \"correct_index\": 1, \"explanation\": \"A masked language model predicts the masked token based on its surrounding context, hence p(token|surrounding tokens).\"}",
+    "source": "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md",
+    "context": ""
+  },
+  {
+    "question": "How is the set of choices for hyperparameters in a model called?",
+    "answer": "The set of choices for hyperparameters in a model is called the search space.",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about learning rate in the context of gradient descent.",
+    "answer": "{\"question\": \"What can happen if the learning rate is set too high during gradient descent?\", \"options\": [\"The updates will overshoot the minimum\", \"The training process will become computationally inefficient\", \"The descent will take many iterations to converge\", \"The model will not learn from the data\"], \"correct_index\": 2, \"explanation\": \"A high learning rate can cause the updates to overshoot the minimum, leading the algorithm to oscillate around or even diverge from the optimal solution.\"}",
+    "source": "../data/dl_with_python_3ed/ch02_mathematical-building-blocks.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about hyperparameter tuning.",
+    "answer": "{\"question\": \"What does the algorithm in hyperparameter tuning primarily focus on during each iteration?\", \"options\": [\"Improving the model's performance on the training data\", \"Minimizing the computational cost of training\", \"Optimizing the model's performance on the validation data\", \"Maximizing the accuracy of the final test data\"], \"correct_index\": 0, \"explanation\": \"The primary goal of the algorithm in hyperparameter tuning is to optimize the model's performance on the validation data, as this provides an unbiased estimate of how well the model will perform on unseen data.\"}",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain what one-hot encoding assumes about the relationship between different tokens in a feature space?",
+    "answer": "One-hot encoding assumes that different tokens are independent from each other, meaning their one-hot vectors are orthogonal. However, this assumption is often incorrect because words in a feature space are related and share information.",
+    "source": "../data/dl_with_python_3ed/ch14_text-classification.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain how the impact of generative AI compares to its initial promises?",
+    "answer": "While generative AI has grown impressively, generating tens of billions of dollars in revenue by mid-2025, its impact on the overall economy remains relatively small compared to the ambitious expectations set at the beginning.",
+    "source": "../data/dl_with_python_3ed/ch01_what_is_deep_learning.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain how a Transformer is similar to a database?",
+    "answer": "A Transformer can be thought of as storing information, much like a database does. Just as you can query a database with certain inputs to get desired information, you can input tokens into a Transformer to retrieve the information stored within it, which could be a piece of text or a translation or even a style transformation.",
+    "source": "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md",
+    "context": ""
+  },
+  {
+    "question": "What is the main benefit of hyperparameter optimization in machine learning?\nStudent answer: Hyperparameter optimization allows models to learn features automatically, making the process more efficient and less dependent on manual feature engineering.",
+    "answer": "Score: 3/5. You correctly mentioned the automation of feature learning but missed the part about achieving state-of-the-art models through better parameter tuning.",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain why we use binary_crossentropy as the loss function for this model?",
+    "answer": "We use binary_crossentropy because our model's output is a single probability value between 0 and 1, which corresponds to a binary classification task. This loss function measures the performance of a model whose output is a probability value between zero and one.",
+    "source": "../data/dl_with_python_3ed/ch04_classification-and-regression.md",
+    "context": ""
+  },
+  {
+    "question": "What do the blind men in the analogy represent?",
+    "answer": "The blind men in the analogy represent machine learning models.",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "What is the main idea behind reverse diffusion models?\nStudent answer: Reverse diffusion models add noise to images until they become dispersed, then remove the noise to create sharp images.",
+    "answer": "Score: 3/5. You correctly stated that reverse diffusion models remove noise, but missed the part about starting with pure noise and the gradual process of adding noise first.",
+    "source": "../data/dl_with_python_3ed/ch17_image-generation.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain what generative AI means and how it's trained?",
+    "answer": "Generative AI is a type of deep learning model that can create new text, images, videos, or sounds. It's trained in a self-supervised way, meaning it learns by trying to complete or correct incomplete data, like filling in missing parts of an image or predicting the next word in a sentence.",
+    "source": "../data/dl_with_python_3ed/ch20_conclusion.md",
+    "context": ""
+  },
+  {
+    "question": "What is an example given in the lecture for a model that blended these two types of modules?",
+    "answer": "AlphaGo or self-driving cars are given as examples of systems that blended symbolic and geometric AI by requiring a lot of manual software engineering and human-made design decisions.",
+    "source": "../data/dl_with_python_3ed/ch19_future_of_ai.md",
+    "context": ""
+  },
+  {
+    "question": "What is the test accuracy of the bidirectional LSTM model mentioned in the lecture material?",
+    "answer": "The bidirectional LSTM model gets to 84% test accuracy.",
+    "source": "../data/dl_with_python_3ed/ch14_text-classification.md",
+    "context": ""
+  },
+  {
+    "question": "How is the tensor product represented in Python for NumPy?",
+    "answer": "In NumPy, the tensor product is done using the np.matmul function.",
+    "source": "../data/dl_with_python_3ed/ch02_mathematical-building-blocks.md",
+    "context": ""
+  },
+  {
+    "question": "What is done eventually after repeating the process?",
+    "answer": "Eventually, measure performance on your test data.",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain what makes forecasting with timeseries unique?",
+    "answer": "Forecasting with timeseries is special because it relies heavily on the order of data points. Unlike other types of predictions, we use the sequence of past events to predict what will happen next, making it particularly useful for tasks like managing inventory or predicting energy demand.",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about subword tokenization.",
+    "answer": "{\"question\": \"Why might subword tokenization take longer to process than word or character tokenizers?\", \"options\": [\"It requires learning additional rules which can be more complex than simple word counting.\", \"Subword tokenization is less accurate and thus takes more time to compute.\", \"Subword tokenization only works with specific types of text.\", \"Subword tokenization does not require any learning process.\"], \"correct_index\": 0, \"explanation\": \"Subword tokenization involves learning merge rules, which can be more complex than simply counting words. This complexity can lead to longer processing times compared to word or character tokenizers.\"}",
+    "source": "../data/dl_with_python_3ed/ch14_text-classification.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about value-centric analogies.",
+    "answer": "{\"question\": \"Which of the following best exemplifies the use of value-centric analogies?\", \"options\": [\"Writing an essay about the benefits of exercise\", \"Calculating the area of a rectangle\", \"Watching a movie and categorizing characters into types\", \"Solving a math problem using algebraic equations\"], \"correct_index\": 2, \"explanation\": \"Value-centric analogies involve categorizing and understanding concepts based on their inherent value or meaning, which is best represented by watching a movie and categorizing characters into types.\"}",
+    "source": "../data/dl_with_python_3ed/ch19_future_of_ai.md",
+    "context": ""
+  },
+  {
+    "question": "What does this chapter focus on?",
+    "answer": "This chapter focuses on forecasting.",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "What is the term used to describe the process of gradually adding noise to an image until it disperses into nothing?",
+    "answer": "The term used to describe this process is'reverse diffusion'.",
+    "source": "../data/dl_with_python_3ed/ch17_image-generation.md",
+    "context": ""
+  },
+  {
+    "question": "What does 'activation' refer to in this context?",
+    "answer": "In this context, 'activation' refers to the output of a layer.",
+    "source": "../data/dl_with_python_3ed/ch10_interpreting-what-convnets-learn.md",
+    "context": ""
+  },
+  {
+    "question": "How many training samples are there?",
+    "answer": "There are 480 training samples.",
+    "source": "../data/dl_with_python_3ed/ch04_classification-and-regression.md",
+    "context": ""
+  },
+  {
+    "question": "If someone can perform a task without consciously thinking about it, what does the text suggest they rely on?",
+    "answer": "They are heavily relying on value-centric analogies.",
+    "source": "../data/dl_with_python_3ed/ch19_future_of_ai.md",
+    "context": ""
+  },
+  {
+    "question": "What is one limitation of deep learning mentioned in the lecture?\nStudent answer: Deep learning models struggle with tasks that require understanding natural language.",
+    "answer": "Score: 3/5. You correctly stated that deep learning struggles with natural language tasks but missed mentioning its difficulty with context and common sense reasoning.",
+    "source": "../data/dl_with_python_3ed/ch19_future_of_ai.md",
+    "context": ""
+  },
+  {
+    "question": "How many datasets will be instantiated using `timeseries_dataset_from_array`?",
+    "answer": "Three datasets will be instantiated: one for training, one for validation, and one for testing.",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "How does bfloat16 compare to float16 in terms of range and resolution?",
+    "answer": "bfloat16 covers a much wider range of values compared to float16, but it has a lower'resolution' over this range.",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about Machine Learning Workflow.",
+    "answer": "{\"question\": \"Which of the following steps is typically the first in the machine learning workflow?\", \"options\": [\"Evaluating the model\", \"Model selection\", \"Training the model\", \"Data collection\"], \"correct_index\": 3, \"explanation\": \"The first step in the machine learning workflow is to collect the necessary data that will be used to train the model.\"}",
+    "source": "../data/dl_with_python_3ed/ch20_conclusion.md",
+    "context": ""
+  },
+  {
+    "question": "What does the `grad_fn` do?",
+    "answer": "The `grad_fn` is used to retrieve the gradient values.",
+    "source": "../data/dl_with_python_3ed/ch03_introduction-to-ml-frameworks.md",
+    "context": ""
+  },
+  {
+    "question": "Is it likely that one will encounter unique challenges when attempting a new task?",
+    "answer": "No, chances are you’re not the first person to attempt it, implying that unique challenges may have already been addressed.",
+    "source": "../data/dl_with_python_3ed/ch05_fundamentals-of-ml.md",
+    "context": ""
+  },
+  {
+    "question": "What does it mean when the lecture says handwritten digits form a manifold?",
+    "answer": "A manifold is a lower-dimensional subspace of some parent space that is locally similar to a linear (Euclidean) space. In simpler terms, it means that handwritten digits occupy a smaller, more organized space within the larger space of all possible 28x28 pixel arrays.",
+    "source": "../data/dl_with_python_3ed/ch05_fundamentals-of-ml.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about interpolation in deep learning.",
+    "answer": "{\"question\": \"What does deep learning primarily use to generalize from the training data?\", \"options\": [\"Direct copying of the most similar training example\", \"Random extrapolation away from the data manifold\", \"Linear interpolation in the parent space\", \"Interpolation on the latent manifold\"], \"correct_index\": 3, \"explanation\": \"Deep learning uses interpolation on the latent manifold to generalize, which is different from simple linear interpolation in the parent space or random extrapolation.\"}",
+    "source": "../data/dl_with_python_3ed/ch05_fundamentals-of-ml.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about byte-pair encoding.",
+    "answer": "{\"question\": \"What is the first step in applying byte-pair encoding to text?\", \"options\": [\"Merging the most common pair of characters into a new symbol\", \"Splitting the text into characters and joining them with a space\", \"Finding the least common pair of characters to merge\", \"Counting the occurrences of each word in the text\"], \"correct_index\": 1, \"explanation\": \"The first step in applying byte-pair encoding is to split the text into characters and join them with a space, making it easier to consider pairs of characters.\"}",
+    "source": "../data/dl_with_python_3ed/ch14_text-classification.md",
+    "context": ""
+  },
+  {
+    "question": "How do you get the current metric value after updating it?",
+    "answer": "After updating the metric with `update_state(y_true, y_pred)`, you can get the current metric value by calling `result()`.",
+    "source": "../data/dl_with_python_3ed/ch07_deep-dive-keras.md",
+    "context": ""
+  },
+  {
+    "question": "What are the two topics discussed in the lecture material?",
+    "answer": "The lecture material discusses natural language processing and generative deep learning.",
+    "source": "../data/dl_with_python_3ed/ch07_deep-dive-keras.md",
+    "context": ""
+  },
+  {
+    "question": "What is a limitation of data parallelism?",
+    "answer": "A limitation of data parallelism is that your model needs to fit into one of your devices, which is challenging for large models like those with tens of billions of parameters.",
+    "source": "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md",
+    "context": ""
+  },
+  {
+    "question": "What type of classification problem is it when you need to categorize news articles into multiple categories?\nStudent answer: It is a multiclass classification problem, but I'm not sure if it's single-label or multi-label.",
+    "answer": "Score: 3/5. You correctly stated that it's a multiclass classification problem but missed specifying that it's single-label because each article belongs to only one topic.",
+    "source": "../data/dl_with_python_3ed/ch04_classification-and-regression.md",
+    "context": ""
+  },
+  {
+    "question": "How is the retrieved information used?",
+    "answer": "The retrieved information is added directly into the prompt to provide more context for the teaching assistant.",
+    "source": "../data/dl_with_python_3ed/ch16_text-generation.md",
+    "context": ""
+  },
+  {
+    "question": "How many shards of text data are there?",
+    "answer": "There are 50 shards of text data.",
+    "source": "../data/dl_with_python_3ed/ch16_text-generation.md",
+    "context": ""
+  },
+  {
+    "question": "What is the suggested alternative to using one-hot encoding for representing words in the text?",
+    "answer": "The suggested alternative is word embeddings.",
+    "source": "../data/dl_with_python_3ed/ch14_text-classification.md",
+    "context": ""
+  },
+  {
+    "question": "What are the main components of large language models (LLMs)?\nStudent answer: LLMs consist of the Transformer architecture and a language modeling task which involves predicting the next word.",
+    "answer": "Score: 3/5. You correctly stated the Transformer architecture and the language modeling task, but missed the mention of the large amount of unlabeled text data which is crucial for training the model.",
+    "source": "../data/dl_with_python_3ed/ch16_text-generation.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain what the attention_mask is and why we reshape the tokens like that?",
+    "answer": "Sure! The attention_mask helps the model focus only on the actual tokens in the input sequence, ignoring any padding tokens. By reshaping the tokens into (batch_size, 1, source_length), we create a mask that marks which tokens should be considered during the attention mechanism, allowing the model to build a more accurate representation of the input sentence.",
+    "source": "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain why set-based models are a good choice when compute resources are limited?",
+    "answer": "Set-based models, like bigram models, are great choices when you have limited computing resources because they are very fast and require only a small number of parameters, making them much more efficient than larger models with billions of parameters.",
+    "source": "../data/dl_with_python_3ed/ch14_text-classification.md",
+    "context": ""
+  },
+  {
+    "question": "What is the purpose of the section?",
+    "answer": "The section synthesizes key takeaways from the book to serve as a quick refresher for readers.",
+    "source": "../data/dl_with_python_3ed/ch20_conclusion.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about interpretability in computer vision applications.",
+    "answer": "{\"question\": \"What is a key challenge when using deep learning models in computer vision, particularly in applications where human expertise is needed?\", \"options\": [\"How to reduce the size of the dataset\", \"Why a classifier might misinterpret an image\", \"How to increase the resolution of images\", \"How to speed up model training\"], \"correct_index\": 1, \"explanation\": \"The lecture mentions that a fundamental problem is understanding why a classifier makes certain decisions, especially in applications like medical imaging where human expertise is important.\"}",
+    "source": "../data/dl_with_python_3ed/ch10_interpreting-what-convnets-learn.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about Temperature Data Visualization.",
+    "answer": "{\"question\": \"What can be observed in the plot of the first 10 days of temperature data recorded every 10 minutes?\", \"options\": [\"Monthly periodicity\", \"Weekly periodicity\", \"Daily periodicity, especially evident for the last four days\", \"Yearly periodicity\"], \"correct_index\": 2, \"explanation\": \"The lecture mentions that daily periodicity is evident, particularly in the last four days of the 10-day period.\"}",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "What does the lecture suggest about reducing reasoning problems?",
+    "answer": "It suggests that reducing reasoning problems to manifold interpolation is unlikely.",
+    "source": "../data/dl_with_python_3ed/ch19_future_of_ai.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain what Word2Vec is and how it relates to CBOW?",
+    "answer": "Word2Vec is a type of neural network that creates word embeddings. It's similar to the Continuous Bag of Words (CBOW) model we covered earlier. In both models, words are represented as vectors in a high-dimensional space, allowing us to capture semantic relationships between them.",
+    "source": "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md",
+    "context": ""
+  },
+  {
+    "question": "What does a bidirectional RNN do differently from a chronological-order RNN?",
+    "answer": "A bidirectional RNN looks at its input sequence in both directions, which can potentially result in richer representations and capture patterns that might have been missed by the chronological-order version.",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain why the information flow is not bidirectional for input sequences?",
+    "answer": "In this approach, the model's learned representation of a word like 'Where' during processing an input sequence like 'Where is the capital of France?' can't directly pay attention to the related words 'capital' and 'France'. This means the information flow is unidirectional for each step, focusing only on the current context without backward connections.",
+    "source": "../data/dl_with_python_3ed/ch16_text-generation.md",
+    "context": ""
+  },
+  {
+    "question": "Why does the model have low-confidence values?",
+    "answer": "The model has low-confidence values because it has not yet learned to consistently locate objects in a scene.",
+    "source": "../data/dl_with_python_3ed/ch12_object-detection.md",
+    "context": ""
+  },
+  {
+    "question": "What potential issue does the lecture material raise regarding the use of LLMs?",
+    "answer": "If every organization using an LLM ran pretraining themselves, the scale of energy use would be a noticeable percentage of global energy consumption.",
+    "source": "../data/dl_with_python_3ed/ch16_text-generation.md",
+    "context": ""
+  },
+  {
+    "question": "Can you explain why averaging pixels between two MNIST digits is usually not a valid digit?",
+    "answer": "Averaging pixels between two MNIST digits doesn't work because the space of valid digits is highly structured and non-linear. Pixels change in a way that doesn't follow simple linear patterns, so averaging might create a combination that doesn't look like any digit.",
+    "source": "../data/dl_with_python_3ed/ch05_fundamentals-of-ml.md",
+    "context": ""
+  },
+  {
+    "question": "How many different classes did the Xception model train on during its training on ImageNet?",
+    "answer": "The Xception model was trained on the ImageNet dataset with ~1 million labeled images belonging to 1,000 different classes.",
+    "source": "../data/dl_with_python_3ed/ch10_interpreting-what-convnets-learn.md",
+    "context": ""
+  },
+  {
+    "question": "What areas of machine perception has deep learning made progress in?",
+    "answer": "Deep learning has made progress in extracting useful information from images, videos, sound, and more.",
+    "source": "../data/dl_with_python_3ed/ch20_conclusion.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about randomized A/B testing.",
+    "answer": "{\"question\": \"Which of the following best describes the purpose of randomized A/B testing in evaluating a model?\", \"options\": [\"To determine the overall performance of the model in comparison to human experts\", \"To assess the technical skills of the team developing the model\", \"To isolate the impact of the model itself by comparing it with a control group\", \"To compare the cost-effectiveness of different models\"], \"correct_index\": 0, \"explanation\": \"Randomized A/B testing involves splitting data into two groups: one that uses the new model and one that sticks to the old process. The difference in outcomes between these groups can help isolate the effect of the model.\"}",
+    "source": "../data/dl_with_python_3ed/ch06_universal-workflow-of-ml.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about the vanishing gradients problem in recurrent neural networks.",
+    "answer": "{\"question\": \"What is a key challenge in training recurrent neural networks (RNNs) that causes them to struggle with learning long-term dependencies?\", \"options\": [\"Inability to handle sequential data\", \"Exploding gradients\", \"The vanishing gradients problem\", \"Overfitting on short-term dependencies\"], \"correct_index\": 2, \"explanation\": \"The vanishing gradients problem refers to the issue where gradients become very small as they are backpropagated through time, making it difficult for RNNs to learn long-term dependencies. Overfitting on short-term dependencies, exploding gradients, and inability to handle sequential data are not directly related to the vanishing gradients problem.\"}",
+    "source": "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md",
+    "context": ""
+  },
+  {
+    "question": "Generate a question about scaling targets in neural networks.",
+    "answer": "{\"question\": \"Why is it beneficial to scale the targets when training a neural network?\", \"options\": [\"To increase the learning rate of the model\", \"To decrease the number of epochs required for training\", \"To make the training process faster and more efficient\", \"To ensure that the model's predictions match the input values directly\"], \"correct_index\": 3, \"explanation\": \"Scaling the targets ensures that they are in a similar range as the scaled inputs, making it easier for the model to learn appropriate weights. This prevents the model from requiring extremely large weight values to match the large target values, which can slow down training.\"}",
+    "source": "../data/dl_with_python_3ed/ch04_classification-and-regression.md",
+    "context": ""
+  }
+]

@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "seed": 42,
+  "val_frac": 0.05,
+  "test_frac": 0.1,
+  "skip_general": false,
+  "synthetic_jsonl_sha256": "0f65196370c7c3548196d0e123abccde0c27d3194035119216d9a459583d798d",
+  "counts": {
+    "train": 3196,
+    "val": 185,
+    "test": 381
+  },
+  "tasks": {
+    "train": {
+      "explanation": 971,
+      "flashcard": 740,
+      "quiz": 851,
+      "review": 634
+    },
+    "val": {
+      "explanation": 56,
+      "flashcard": 46,
+      "quiz": 50,
+      "review": 33
+    },
+    "test": {
+      "explanation": 114,
+      "flashcard": 87,
+      "quiz": 103,
+      "review": 77
+    }
+  },
+  "sources": {
+    "train": {
+      "../data/dl_with_python_3ed/ch01_what_is_deep_learning.md": 119,
+      "../data/dl_with_python_3ed/ch02_mathematical-building-blocks.md": 185,
+      "../data/dl_with_python_3ed/ch03_introduction-to-ml-frameworks.md": 251,
+      "../data/dl_with_python_3ed/ch04_classification-and-regression.md": 109,
+      "../data/dl_with_python_3ed/ch05_fundamentals-of-ml.md": 200,
+      "../data/dl_with_python_3ed/ch06_universal-workflow-of-ml.md": 162,
+      "../data/dl_with_python_3ed/ch07_deep-dive-keras.md": 134,
+      "../data/dl_with_python_3ed/ch08_image-classification.md": 194,
+      "../data/dl_with_python_3ed/ch09_convnet-architecture-patterns.md": 64,
+      "../data/dl_with_python_3ed/ch10_interpreting-what-convnets-learn.md": 27,
+      "../data/dl_with_python_3ed/ch11_image-segmentation.md": 84,
+      "../data/dl_with_python_3ed/ch12_object-detection.md": 102,
+      "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md": 166,
+      "../data/dl_with_python_3ed/ch14_text-classification.md": 209,
+      "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md": 192,
+      "../data/dl_with_python_3ed/ch16_text-generation.md": 273,
+      "../data/dl_with_python_3ed/ch17_image-generation.md": 107,
+      "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md": 172,
+      "../data/dl_with_python_3ed/ch19_future_of_ai.md": 274,
+      "../data/dl_with_python_3ed/ch20_conclusion.md": 87,
+      "prsdm_ml_qa": 85
+    },
+    "val": {
+      "../data/dl_with_python_3ed/ch01_what_is_deep_learning.md": 4,
+      "../data/dl_with_python_3ed/ch02_mathematical-building-blocks.md": 15,
+      "../data/dl_with_python_3ed/ch03_introduction-to-ml-frameworks.md": 9,
+      "../data/dl_with_python_3ed/ch04_classification-and-regression.md": 14,
+      "../data/dl_with_python_3ed/ch05_fundamentals-of-ml.md": 13,
+      "../data/dl_with_python_3ed/ch06_universal-workflow-of-ml.md": 16,
+      "../data/dl_with_python_3ed/ch07_deep-dive-keras.md": 9,
+      "../data/dl_with_python_3ed/ch08_image-classification.md": 9,
+      "../data/dl_with_python_3ed/ch10_interpreting-what-convnets-learn.md": 3,
+      "../data/dl_with_python_3ed/ch11_image-segmentation.md": 7,
+      "../data/dl_with_python_3ed/ch12_object-detection.md": 4,
+      "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md": 4,
+      "../data/dl_with_python_3ed/ch14_text-classification.md": 6,
+      "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md": 18,
+      "../data/dl_with_python_3ed/ch16_text-generation.md": 7,
+      "../data/dl_with_python_3ed/ch17_image-generation.md": 7,
+      "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md": 10,
+      "../data/dl_with_python_3ed/ch19_future_of_ai.md": 15,
+      "../data/dl_with_python_3ed/ch20_conclusion.md": 10,
+      "prsdm_ml_qa": 5
+    },
+    "test": {
+      "../data/dl_with_python_3ed/ch01_what_is_deep_learning.md": 19,
+      "../data/dl_with_python_3ed/ch02_mathematical-building-blocks.md": 36,
+      "../data/dl_with_python_3ed/ch03_introduction-to-ml-frameworks.md": 26,
+      "../data/dl_with_python_3ed/ch04_classification-and-regression.md": 7,
+      "../data/dl_with_python_3ed/ch05_fundamentals-of-ml.md": 7,
+      "../data/dl_with_python_3ed/ch06_universal-workflow-of-ml.md": 30,
+      "../data/dl_with_python_3ed/ch07_deep-dive-keras.md": 23,
+      "../data/dl_with_python_3ed/ch08_image-classification.md": 25,
+      "../data/dl_with_python_3ed/ch09_convnet-architecture-patterns.md": 8,
+      "../data/dl_with_python_3ed/ch10_interpreting-what-convnets-learn.md": 4,
+      "../data/dl_with_python_3ed/ch11_image-segmentation.md": 2,
+      "../data/dl_with_python_3ed/ch12_object-detection.md": 11,
+      "../data/dl_with_python_3ed/ch13_timeseries-forecasting.md": 21,
+      "../data/dl_with_python_3ed/ch14_text-classification.md": 24,
+      "../data/dl_with_python_3ed/ch15_language-models-and-the-transformer.md": 24,
+      "../data/dl_with_python_3ed/ch16_text-generation.md": 38,
+      "../data/dl_with_python_3ed/ch17_image-generation.md": 18,
+      "../data/dl_with_python_3ed/ch18_best-practices-for-the-real-world.md": 23,
+      "../data/dl_with_python_3ed/ch19_future_of_ai.md": 21,
+      "../data/dl_with_python_3ed/ch20_conclusion.md": 4,
+      "prsdm_ml_qa": 10
+    }
+  },
+  "course_chunks": {
+    "train_unique": 906,
+    "val_unique": 53,
+    "test_unique": 106
+  }
+}

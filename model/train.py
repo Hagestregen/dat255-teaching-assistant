@@ -71,6 +71,7 @@ from torch.optim import AdamW
 
 from transformer import TeachingAssistantModel, TransformerConfig
 from dataset import Tokenizer, build_datasets, make_dataloader
+from torch.utils.data import DataLoader
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ class TrainingConfig:
     out_dir:              str   = "checkpoints"
     data_chunks_json:     str   = "rag_index/chunks.json"
     synthetic_jsonl:      str   = "data/synthetic_qa.jsonl"
+    splits_dir:           str   = "data/splits"   # frozen splits (preferred)
 
     # Training loop
     max_steps:            int   = 5000
@@ -121,6 +123,9 @@ class TrainingConfig:
 
     # Phase 6: regularization
     ema_decay:            float = 0.0           # 0 = off; 0.999 typical
+
+    # Data-size ablation (Phase A2 of the experiment plan)
+    max_train_examples:   Optional[int] = None  # cap train set; 0/None = keep all
 
     # Reproducibility
     seed:                 int   = 42
@@ -310,6 +315,98 @@ def _amp_ctx(device: str, mixed_precision: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @torch.no_grad()
+# ─────────────────────────────────────────────────────────────────────────────
+# Run-metadata helpers (used to make every W&B run self-describing for the
+# project report).  Cheap and side-effect-free; failures fall back to None.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _git_sha(short: bool = True) -> Optional[str]:
+    """Return the current git commit SHA (short form), or None if unavailable."""
+    import subprocess
+    try:
+        cmd = ["git", "rev-parse", "--short" if short else "HEAD", "HEAD" if short else ""]
+        cmd = [c for c in cmd if c]
+        sha = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
+        # Also flag if the working tree is dirty so report runs can be filtered.
+        dirty = subprocess.call(["git", "diff", "--quiet"],
+                                stderr=subprocess.DEVNULL) != 0
+        return f"{sha}{'-dirty' if dirty else ''}"
+    except Exception:
+        return None
+
+
+def _splits_manifest_summary(splits_dir: str) -> Optional[dict]:
+    """Read `manifest.json` from the frozen-splits dir and return a compact dict."""
+    if not splits_dir:
+        return None
+    path = Path(splits_dir)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent.parent / splits_dir
+    manifest_path = path / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        m = json.loads(manifest_path.read_text())
+        return {
+            "splits_seed":     m.get("seed"),
+            "splits_val_frac": m.get("val_frac"),
+            "splits_test_frac": m.get("test_frac"),
+            "splits_counts":   m.get("counts"),
+            "splits_tasks":    m.get("tasks"),
+            "splits_data_sha256": m.get("synthetic_jsonl_sha256"),
+        }
+    except Exception:
+        return None
+
+
+def _generate_samples(model, tokenizer, prompts: list[str], device: str,
+                      max_new_tokens: int = 120, temperature: float = 0.7) -> list[str]:
+    """
+    Generate one completion per prompt and return decoded text (sans prompt).
+    Used for the W&B `samples` table so the report can show qualitative
+    progress every val step without needing to re-run inference.
+    """
+    raw = _unwrap(model)
+    was_training = raw.training
+    raw.eval()
+    out: list[str] = []
+    with torch.no_grad():
+        for prompt in prompts:
+            ids = torch.tensor([tokenizer.encode(prompt)], device=device, dtype=torch.long)
+            gen = raw.generate(
+                ids,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_k=50, top_p=0.95,
+                stop_token=tokenizer.eot_id,
+                use_cache=True,
+            )
+            new_ids = gen[0, ids.size(1):].tolist()
+            # Trim at first eot_id if present so we don't show post-EOS noise.
+            if tokenizer.eot_id in new_ids:
+                new_ids = new_ids[:new_ids.index(tokenizer.eot_id)]
+            out.append(tokenizer.decode(new_ids))
+    if was_training:
+        raw.train()
+    return out
+
+
+# Five fixed prompts (one per task, plus a no-task baseline) — kept identical
+# across runs so the W&B sample table is directly comparable between models.
+_DEFAULT_SAMPLE_PROMPTS = [
+    "<|explain|> Question: What is overfitting and how do we detect it?\nAnswer:",
+    "<|quiz|> Question: Which of the following best describes dropout?\n"
+        "A) A way to mask out tokens at random\n"
+        "B) A regularizer that randomly zeros activations\n"
+        "C) A learning-rate schedule\n"
+        "D) An optimizer\nAnswer:",
+    "<|review|> Question: Explain the bias-variance tradeoff.\n"
+        "Student answer: It's about the model being too simple or too complex.\nAnswer:",
+    "<|flashcard|> Question: Define cross-entropy loss.\nAnswer:",
+    "Question: How is gradient descent used to train a neural network?\nAnswer:",
+]
+
+
 def evaluate(model, val_loader, device: str, cfg: TrainingConfig, max_batches: int = 50) -> dict:
     """Compute validation loss and perplexity (autocast-aware)."""
     was_training = model.training
@@ -335,6 +432,50 @@ def evaluate(model, val_loader, device: str, cfg: TrainingConfig, max_batches: i
         "val_loss":        avg_loss,
         "val_perplexity":  math.exp(avg_loss),
     }
+
+
+def evaluate_per_task(model, val_ds, device: str, cfg: TrainingConfig,
+                      batch_size: int = 16, max_batches_per_task: int = 50) -> dict:
+    """
+    Per-task-type validation loss + perplexity.
+
+    Why we report this separately
+    -----------------------------
+    The training set has 4 task types (explanation, quiz, review, flashcard)
+    and the model can perform well on average while being terrible at one
+    of them.  The aggregate `val_loss` hides that.  We report per-task loss
+    so the report can show, e.g., "the model is excellent at explanations
+    (loss 1.2) but underfits quiz format (loss 3.4)".
+
+    Implementation note: we use torch.utils.data.Subset to slice the
+    already-tokenized val dataset by task type rather than re-tokenising.
+    The aligned raw_examples list on QADataset gives us the per-index types.
+    """
+    from torch.utils.data import Subset
+
+    raw = getattr(val_ds, "raw_examples", None)
+    if not raw:
+        return {}
+
+    # Bucket dataset indices by example type.
+    by_type: dict[str, list[int]] = {}
+    for i, ex in enumerate(raw):
+        t = ex.get("type", "explanation")
+        by_type.setdefault(t, []).append(i)
+
+    out: dict[str, float] = {}
+    for task, idxs in sorted(by_type.items()):
+        if not idxs:
+            continue
+        loader = DataLoader(
+            Subset(val_ds, idxs), batch_size=batch_size,
+            shuffle=False, num_workers=0, pin_memory=True,
+        )
+        m = evaluate(model, loader, device, cfg, max_batches=max_batches_per_task)
+        out[f"val_loss_{task}"]       = m["val_loss"]
+        out[f"val_perplexity_{task}"] = m["val_perplexity"]
+        out[f"val_n_{task}"]          = len(idxs)
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -424,6 +565,8 @@ def train(model_config: Optional[TransformerConfig] = None,
         tokenizer=tokenizer,
         max_length=train_config.max_length,
         rag_context_prob=train_config.rag_context_prob,
+        max_train_examples=train_config.max_train_examples,
+        splits_dir=train_config.splits_dir,
     )
 
     if train_config.use_packing:
@@ -446,10 +589,11 @@ def train(model_config: Optional[TransformerConfig] = None,
     val_loader = make_dataloader(val_ds, train_config.batch_size, shuffle=False)
 
     # ── Model and optimizer (with optional resume) ────────────────────────────
-    start_step    = 0
-    best_val_loss = float("inf")
-    no_improve    = 0
-    history       = {"train": [], "val": []}
+    start_step        = 0
+    best_val_loss     = float("inf")
+    best_ema_val_loss = float("inf")
+    no_improve        = 0
+    history           = {"train": [], "val": []}
 
     if train_config.resume_from:
         print(f"Resuming from: {train_config.resume_from}")
@@ -504,9 +648,29 @@ def train(model_config: Optional[TransformerConfig] = None,
     # ── Optional W&B logging ──────────────────────────────────────────────────
     if train_config.use_wandb:
         import wandb
+        # Compose a self-describing config so every W&B run captures git
+        # state, dataset version and parameter counts.  This is what the
+        # report cites — without it we can't reproduce results next month.
+        n_params       = sum(p.numel() for p in _unwrap(model).parameters())
+        n_train_params = sum(p.numel() for p in _unwrap(model).parameters() if p.requires_grad)
+        run_meta = {
+            "git_sha":                 _git_sha(),
+            "n_params":                n_params,
+            "n_trainable_params":      n_train_params,
+            "n_train_examples":        len(getattr(train_ds, "raw_examples", [])),
+            "n_val_examples":          len(getattr(val_ds,   "raw_examples", [])),
+            "n_test_examples":         len(getattr(test_ds,  "raw_examples", [])),
+            "tokenizer_vocab_size":    tokenizer.vocab_size,
+        }
+        manifest_meta = _splits_manifest_summary(train_config.splits_dir) or {}
         wandb.init(
             project="dat255-teaching-assistant",
-            config={**asdict(model_config), **asdict(train_config)},
+            config={
+                **asdict(model_config),
+                **asdict(train_config),
+                **run_meta,
+                **manifest_meta,
+            },
         )
 
     print(f"\nStarting training: {train_config.max_steps} steps "
@@ -605,12 +769,38 @@ def train(model_config: Optional[TransformerConfig] = None,
             log_str = (f"  [VAL] loss {val_metrics['val_loss']:.4f} | "
                        f"ppl {val_metrics['val_perplexity']:.1f}")
 
+            # Per-task breakdown (live weights).  Cheap on the small val set
+            # and very useful for the report's "task strength" subsection.
+            try:
+                per_task = evaluate_per_task(
+                    model, val_ds, device, train_config,
+                    batch_size=train_config.batch_size,
+                )
+                val_metrics.update(per_task)
+                # Compact one-line summary so the log stays readable.
+                if per_task:
+                    task_strs = [f"{k.replace('val_loss_',''):s}={v:.2f}"
+                                 for k, v in per_task.items() if k.startswith("val_loss_")]
+                    log_str += "  [task " + " ".join(task_strs) + "]"
+            except Exception as e:
+                print(f"  [warn] per-task eval failed: {e}")
+
             # Optional: also evaluate with EMA shadow weights and report both
             if ema is not None:
                 with ema.swapped_into(_unwrap(model)):
                     ema_metrics = evaluate(model, val_loader, device, train_config)
+                    try:
+                        ema_per_task = evaluate_per_task(
+                            model, val_ds, device, train_config,
+                            batch_size=train_config.batch_size,
+                        )
+                    except Exception:
+                        ema_per_task = {}
                 val_metrics["ema_val_loss"]       = ema_metrics["val_loss"]
                 val_metrics["ema_val_perplexity"] = ema_metrics["val_perplexity"]
+                # Re-key the EMA per-task metrics so they don't collide.
+                for k, v in ema_per_task.items():
+                    val_metrics[k.replace("val_", "ema_val_")] = v
                 log_str += (f" | EMA loss {ema_metrics['val_loss']:.4f} "
                             f"ppl {ema_metrics['val_perplexity']:.1f}")
             print(log_str)
@@ -618,7 +808,34 @@ def train(model_config: Optional[TransformerConfig] = None,
             history["val"].append({"step": step, **val_metrics})
             if train_config.use_wandb:
                 import wandb
-                wandb.log(val_metrics, step=step)
+                # W&B prefers nested namespaces ("val/loss_explanation") over
+                # flat keys ("val_loss_explanation"); normalise here.
+                wandb_payload = {}
+                for k, v in val_metrics.items():
+                    if k.startswith("val_"):
+                        wandb_payload[f"val/{k[4:]}"] = v
+                    elif k.startswith("ema_val_"):
+                        wandb_payload[f"val_ema/{k[8:]}"] = v
+                    else:
+                        wandb_payload[k] = v
+                wandb.log(wandb_payload, step=step)
+
+                # Sample-generation table: 5 fixed prompts, one per task type
+                # plus a no-task baseline.  Logged at every val step so the
+                # W&B UI lets you scrub through training and watch outputs
+                # improve.  This is the most direct qualitative evidence we
+                # can include in the report.
+                try:
+                    samples = _generate_samples(
+                        model, tokenizer, _DEFAULT_SAMPLE_PROMPTS, device,
+                        max_new_tokens=120, temperature=0.7,
+                    )
+                    table = wandb.Table(columns=["step", "prompt", "completion"])
+                    for prompt, completion in zip(_DEFAULT_SAMPLE_PROMPTS, samples):
+                        table.add_data(step, prompt, completion)
+                    wandb.log({"samples": table}, step=step)
+                except Exception as e:
+                    print(f"  [warn] sample generation failed: {e}")
 
             # Track best model and persist on improvement
             if val_metrics["val_loss"] < best_val_loss:
@@ -637,6 +854,20 @@ def train(model_config: Optional[TransformerConfig] = None,
                           f"no val improvement for {no_improve} validation intervals.")
                     break
 
+            # Also track the best EMA val checkpoint so we can recover the
+            # EMA snapshot at its peak (which is often a few hundred steps
+            # past the live-val peak — see GPT-2 warm-start runs).
+            ema_val = val_metrics.get("ema_val_loss")
+            if ema is not None and ema_val is not None and ema_val < best_ema_val_loss:
+                best_ema_val_loss = ema_val
+                save_checkpoint(
+                    model, optimizer, step,
+                    {"best_ema": True,
+                     "best_ema_val_loss": best_ema_val_loss,
+                     **val_metrics},
+                    train_config, name="best_ema.pt", ema=ema,
+                )
+
         # ── Periodic checkpoint ──────────────────────────────────────────────
         if step % train_config.save_interval == 0:
             metrics = {"step": step, "lr": lr, "best_val_loss": best_val_loss}
@@ -651,7 +882,7 @@ def train(model_config: Optional[TransformerConfig] = None,
     )
     print(f"Final model saved to: {final_path}")
 
-    tok_meta = {"vocab_size": tokenizer.vocab_size, "encoding": "gpt2"}
+    tok_meta = {"vocab_size": tokenizer.vocab_size, "encoding": "gpt2_teaching"}
     with open(Path(train_config.out_dir) / "tokenizer_meta.json", "w") as f:
         json.dump(tok_meta, f)
 
@@ -731,6 +962,9 @@ def _build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--out-dir",          type=str)
     p.add_argument("--data-chunks-json", type=str)
     p.add_argument("--synthetic-jsonl",  type=str)
+    p.add_argument("--splits-dir",       type=str,
+                   help="Frozen train/val/test split directory (preferred over "
+                        "--synthetic-jsonl). Default: data/splits")
     p.add_argument("--mixed-precision",  choices=["none", "bf16"])
     p.add_argument("--compile",          action="store_true", dest="compile_model",
                    help="Enable torch.compile")
@@ -741,6 +975,8 @@ def _build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--rag-context-prob", type=float,
                    help="P(include retrieved context in train prompts), Phase 3")
     p.add_argument("--ema-decay",        type=float, help="EMA decay (0=off)")
+    p.add_argument("--max-train-examples", type=int,
+                   help="Cap the train split size (for data-size ablations)")
     p.add_argument("--early-stopping-patience", type=int)
     p.add_argument("--use-wandb",        action="store_true")
     p.add_argument("--log-curves",       type=str, dest="log_curves_path",
@@ -780,12 +1016,14 @@ def _build_configs_from_args(args: argparse.Namespace) -> tuple[TransformerConfi
         "out_dir":                 args.out_dir,
         "data_chunks_json":        args.data_chunks_json,
         "synthetic_jsonl":         args.synthetic_jsonl,
+        "splits_dir":              args.splits_dir,
         "mixed_precision":         args.mixed_precision,
         "compile_model":           args.compile_model or None,
         "resume_from":             args.resume_from,
         "use_packing":             args.use_packing or None,
         "rag_context_prob":        args.rag_context_prob,
         "ema_decay":               args.ema_decay,
+        "max_train_examples":      args.max_train_examples,
         "early_stopping_patience": args.early_stopping_patience,
         "use_wandb":               args.use_wandb or None,
         "log_curves_path":         args.log_curves_path,

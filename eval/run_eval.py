@@ -39,6 +39,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import torch
 
@@ -53,6 +54,7 @@ from dataset import Tokenizer, build_datasets                            # noqa:
 from train   import load_checkpoint                                      # noqa: E402
 from metrics import (                                                    # noqa: E402
     exact_match, token_f1, rouge_l, llm_judge, aggregate_scores,
+    meteor_score_safe, bertscore_corpus,
 )
 
 
@@ -63,23 +65,44 @@ TEST_SPLIT_PATH = _ROOT / "eval" / "test_split.json"
 # Test-split persistence
 # ─────────────────────────────────────────────────────────────────────────────
 
+FROZEN_SPLITS_DEFAULT = _ROOT / "model" / "data" / "splits"
+
+
 def get_or_build_test_split(
     chunks_json_path: str,
     synthetic_jsonl_path: str,
     tokenizer: Tokenizer,
     max_length: int,
+    splits_dir: Optional[Path] = None,
 ) -> list[dict]:
     """
     Return the canonical test set as a list of {question, answer, source,
-    context?} dicts.
+    context?, type?} dicts.
 
-    On first call, build_datasets() is invoked and the test split is
-    serialized to TEST_SPLIT_PATH.  All subsequent calls just load it.
+    Priority:
+      1. The frozen splits directory (`model/data/splits/test.jsonl`) if it
+         exists.  This is the preferred source — every training run reads
+         the matching `train.jsonl` so all comparisons are over identical
+         examples.
+      2. The legacy `eval/test_split.json` cache from earlier runs.
+      3. Build a new split via `build_datasets()` (legacy on-the-fly path).
     """
+    splits_dir = Path(splits_dir or FROZEN_SPLITS_DEFAULT)
+    frozen_path = splits_dir / "test.jsonl"
+    if frozen_path.exists():
+        examples: list[dict] = []
+        with open(frozen_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    examples.append(json.loads(line))
+        print(f"Loaded frozen test split: {len(examples)} examples from {frozen_path}")
+        return examples
+
     if TEST_SPLIT_PATH.exists():
         with open(TEST_SPLIT_PATH, encoding="utf-8") as f:
             examples = json.load(f)
-        print(f"Loaded existing test split: {len(examples)} examples from {TEST_SPLIT_PATH}")
+        print(f"Loaded legacy test split: {len(examples)} examples from {TEST_SPLIT_PATH}")
         return examples
 
     print("Building test split for the first time...")
@@ -177,6 +200,7 @@ def evaluate_checkpoint(
     judge_model: str,
     max_new_tokens: int,
     temperature: float,
+    use_ema: bool = False,
 ):
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -187,6 +211,27 @@ def evaluate_checkpoint(
     print(f"Loading checkpoint: {checkpoint_path}")
     model, _opt_state, step, ckpt_metrics = load_checkpoint(checkpoint_path, device)
     model.eval()
+
+    # Optionally swap EMA shadow weights into the model for evaluation.
+    # The EMA shadow tends to give a small but consistent generalization
+    # bump; on this project's data it has been worth ~0.5–1.0 nats of val
+    # loss vs. the live weights at the same step.
+    if use_ema:
+        ckpt = torch.load(checkpoint_path, map_location=device)
+        ema_state = ckpt.get("ema_state")
+        if not ema_state:
+            raise RuntimeError(
+                f"--use-ema requested but {checkpoint_path} has no ema_state. "
+                f"Re-train with --ema-decay > 0 to populate it."
+            )
+        loaded = 0
+        with torch.no_grad():
+            for name, p in model.named_parameters():
+                if name in ema_state:
+                    p.data.copy_(ema_state[name].to(device))
+                    loaded += 1
+        print(f"Loaded {loaded} EMA shadow tensors into the model for evaluation.")
+        del ckpt
 
     tokenizer = Tokenizer()
 
@@ -226,6 +271,11 @@ def evaluate_checkpoint(
                 "token_f1":    token_f1(pred, ex["answer"]),
                 "rouge_l":     rouge_l(pred, ex["answer"]),
             }
+            # METEOR is cheap and runs inline; BERTScore is batched after
+            # the loop so we don't reload its 110M-param model per example.
+            meteor = meteor_score_safe(pred, ex["answer"])
+            if meteor is not None:
+                scores["meteor"] = meteor
 
             judge_out: dict | None = None
             if use_judge:
@@ -236,7 +286,7 @@ def evaluate_checkpoint(
                     model_id=judge_model,
                 )
                 if judge_out is not None:
-                    for k in ("correctness", "completeness", "clarity"):
+                    for k in ("correctness", "completeness", "pedagogical_clarity"):
                         scores[f"judge_{k}"] = judge_out[k]
 
             record = {
@@ -255,6 +305,21 @@ def evaluate_checkpoint(
                 elapsed = time.time() - t0
                 rate = (i + 1) / max(elapsed, 1e-6)
                 print(f"  [{i+1}/{len(examples)}]  {rate:.2f} ex/s")
+
+    # ── Corpus-level BERTScore (batched, runs once over all preds) ──────────
+    print("\nComputing BERTScore over all predictions...")
+    bs = bertscore_corpus(
+        preds=[r["pred"] for r in records],
+        golds=[r["gold"] for r in records],
+    )
+    if bs is not None:
+        for r, scores in zip(records, bs):
+            r["scores"].update(scores)
+        # Re-write the per-example file so it includes BERTScore.  Cheap:
+        # only happens once per eval call.
+        with open(per_example_path, "w", encoding="utf-8") as f_out:
+            for r in records:
+                f_out.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     agg = aggregate_scores(records)
     summary = {
@@ -301,6 +366,8 @@ def main():
     p.add_argument("--judge-model",     default="Qwen/Qwen2.5-3B-Instruct")
     p.add_argument("--max-new-tokens",  type=int,   default=200)
     p.add_argument("--temperature",     type=float, default=0.7)
+    p.add_argument("--use-ema",         action="store_true",
+                   help="Use the EMA shadow weights stored in the checkpoint")
     args = p.parse_args()
 
     evaluate_checkpoint(
@@ -315,6 +382,7 @@ def main():
         judge_model          = args.judge_model,
         max_new_tokens       = args.max_new_tokens,
         temperature          = args.temperature,
+        use_ema              = args.use_ema,
     )
 
 
