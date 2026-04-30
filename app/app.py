@@ -12,6 +12,10 @@ Run:
   # Random mode (no tracking):
   python app.py --pretrained qwen-3b
 
+  # LoRA-finetuned Qwen 3B:
+  python app.py --pretrained qwen-3b --lora-path ../model/checkpoints/qwen_lora \
+      --index ../rag/rag_index
+
   # Tracking mode:
   python app.py --pretrained qwen-3b --index ../rag/rag_index --track
 
@@ -95,7 +99,7 @@ PRETRAINED_MODELS = {
 }
 
 
-def load_pretrained(model_key_or_id: str) -> None:
+def load_pretrained(model_key_or_id: str, lora_path: str | None = None) -> None:
     global _pretrained_pipe
     from transformers import (pipeline, AutoModelForCausalLM, AutoTokenizer,
                                BitsAndBytesConfig)
@@ -112,6 +116,11 @@ def load_pretrained(model_key_or_id: str) -> None:
             tokenizer = AutoTokenizer.from_pretrained(real_id)
             model     = AutoModelForCausalLM.from_pretrained(
                             real_id, quantization_config=bnb_cfg, device_map="auto")
+            if lora_path:
+                from peft import PeftModel
+                print(f"Applying LoRA adapter: {lora_path}")
+                model = PeftModel.from_pretrained(model, lora_path)
+                model = model.merge_and_unload()
             _pretrained_pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
             _clear_generation_config(_pretrained_pipe)
             print("Pretrained pipeline loaded (4-bit).")
@@ -119,6 +128,23 @@ def load_pretrained(model_key_or_id: str) -> None:
         except ImportError:
             print("[WARN] bitsandbytes not installed, falling back to fp16")
             model_id = real_id
+
+    if lora_path:
+        # Load model manually so we can apply the LoRA adapter before wrapping in pipeline
+        dtype = torch.bfloat16 if use_gpu else torch.float32
+        print(f"Loading {model_id} (bfloat16) for LoRA merge...")
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        model     = AutoModelForCausalLM.from_pretrained(
+                        model_id, torch_dtype=dtype, device_map="auto")
+        from peft import PeftModel
+        print(f"Applying LoRA adapter: {lora_path}")
+        model = PeftModel.from_pretrained(model, lora_path)
+        model = model.merge_and_unload()
+        model.eval()
+        _pretrained_pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
+        _clear_generation_config(_pretrained_pipe)
+        print("Pretrained pipeline loaded (LoRA merged).")
+        return
 
     device = 0 if use_gpu else -1
     dtype  = torch.float16 if use_gpu else torch.float32
@@ -852,6 +878,9 @@ if __name__ == "__main__":
     parser.add_argument("--share",      action="store_true")
     parser.add_argument("--pretrained", default=None, metavar="MODEL",
                         help="Model key or full HuggingFace model ID. Append :bnb4 for 4-bit.")
+    parser.add_argument("--lora-path", default=None, metavar="PATH",
+                        help="Path to a LoRA adapter directory (with adapter_config.json). "
+                             "Only used together with --pretrained.")
     parser.add_argument("--track",      action="store_true",
                         help="Enable progress tracking.")
     parser.add_argument("--chunks",     default=None,
@@ -869,7 +898,7 @@ if __name__ == "__main__":
         load_retriever(args.index)
 
     if args.pretrained:
-        load_pretrained(args.pretrained)
+        load_pretrained(args.pretrained, lora_path=args.lora_path)
 
     # Load chunks for topic tree (independent of --track)
     chunks_path = args.chunks or str(Path(args.index) / "chunks.json")
