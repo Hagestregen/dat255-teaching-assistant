@@ -1,5 +1,3 @@
-Yo bitches (skrevet av sivert)
-
 ## Installation
 ### 1. Create and Activate Virtual Environment
 
