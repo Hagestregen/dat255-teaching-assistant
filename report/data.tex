@@ -12,7 +12,7 @@ indexing pipeline that turns the course material into a searchable RAG index.
 \subsection{Course material}
 
 The primary source is \textit{Deep Learning with Python} (3rd ed.) by F.\ Chollet
-\cite{chollet2021dlwithpython}, the textbook used in DAT255. The chapters were converted to
+\cite{chollet2024dlwithpython}, the textbook used in DAT255. The chapters were converted to
 Markdown so that the natural document hierarchy --- chapter, section, subsection --- is
 preserved as explicit \texttt{\#}, \texttt{\#\#}, \texttt{\#\#\#} headers. Markdown was chosen
 over plain PDF text extraction because the heading structure is a reliable signal of topical
@@ -71,10 +71,11 @@ retriever runs at inference time.}
 \paragraph{Chunking.}
 \texttt{chunker.py} reads a manifest of Markdown files and splits them in two passes. The
 first pass walks the document tree and emits one chunk per heading section at any of four
-levels (\texttt{\#}, \texttt{\#\#}, \texttt{\#\#\#}, \texttt{\#\#\#\#}). The second pass
-inspects each chunk and, if it exceeds 1\,000 characters, sub-splits it with a 100-character
-overlap between consecutive sub-chunks; the overlap preserves context across the boundary
-and reduces edge-effect retrieval misses. Each chunk is stored together with breadcrumb
+levels (\texttt{\#}, \texttt{\#\#}, \texttt{\#\#\#}, \texttt{\#\#\#\#}). Every header section
+is then re-fed through a recursive character splitter with a 600-character target size and
+80-character overlap between consecutive sub-chunks; the overlap preserves context across
+the boundary and reduces edge-effect retrieval misses. Sub-chunks shorter than 80 characters
+(typically empty header stubs) are discarded. Each chunk is stored together with breadcrumb
 metadata (\texttt{h1 > h2 > h3}) so retrieved passages can be displayed with full provenance.
 The resulting corpus contains 1\,960 chunks.
 
@@ -82,18 +83,19 @@ The resulting corpus contains 1\,960 chunks.
 \texttt{embedder.py} encodes each chunk with the \texttt{BAAI/bge-base-en-v1.5} sentence
 encoder \cite{xiao2023cpack}, a 768-dimensional model that ranks competitively on MTEB while
 remaining small enough to run on a single consumer GPU. A lighter \texttt{all-MiniLM-L6-v2}
-model \cite{reimers2020sentence} is supported as a CPU fallback. The embeddings are stored in
+sentence-transformers model in the spirit of Sentence-BERT~\cite{reimers2019sentence} is
+supported as a CPU fallback. The embeddings are stored in
 an HNSW approximate-nearest-neighbour index \cite{malkov2020hnsw} via the \texttt{hnswlib}
 library. HNSW was chosen over a flat index because $O(\log N)$ search keeps inference latency
 flat as the corpus grows; flat search would have been adequate at the current size but would
 not scale to a multi-course expansion.
 
 \paragraph{A note on tokeniser separation.}
-The retriever uses the BGE tokeniser internally to produce semantic embeddings. The generator
-uses a separate tiktoken-based GPT-2 byte-pair encoding tokeniser
-(Section~\ref{sec:tokenizer}). The two tokenisers serve different purposes --- the first
-exists to compute a similarity vector for search, the second to feed integer IDs into the
-generator's embedding layer --- and are deliberately not shared.
+The retriever uses the BGE encoder's BERT-style WordPiece tokenizer internally to produce
+semantic embeddings. The generator uses a separate tiktoken-based GPT-2 byte-pair encoding
+(BPE) tokeniser (Section~\ref{sec:tokenizer}). The two tokenisers serve different purposes
+--- the first exists to compute a similarity vector for search, the second to feed integer
+IDs into the generator's embedding layer --- and are deliberately not shared.
 
 \paragraph{Format of an indexed chunk.}
 Each entry in \texttt{chunks.json} stores both the raw text and the breadcrumb that
