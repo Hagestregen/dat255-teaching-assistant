@@ -161,18 +161,36 @@ def llm_judge(
     gold: str,
     model_id: str = "Qwen/Qwen2.5-3B-Instruct",
     max_new_tokens: int = 200,
+    model=None,
+    tokenizer=None,
 ) -> Optional[dict]:
     """
     Run an LLM judge on a single (question, prediction, reference) triple.
 
+    Pass `model` and `tokenizer` (pre-loaded HF objects) to skip the internal
+    load_generator call — useful when the caller already has the model in memory
+    and the model package path is not on sys.path.
+
     Returns a dict like {"correctness": int, "completeness": int,
-    "clarity": int, "reason": str} or None on failure.
+    "pedagogical_clarity": int, "reason": str} or None on failure.
     """
-    try:
-        pipe = _load_judge(model_id)
-    except Exception as e:
-        print(f"  [llm_judge] could not load judge: {e}")
-        return None
+    if model is not None and tokenizer is not None:
+        try:
+            from transformers import pipeline as hf_pipeline
+            pipe = hf_pipeline(
+                "text-generation",
+                model=model,
+                tokenizer=tokenizer,
+            )
+        except Exception as e:
+            print(f"  [llm_judge] could not build pipeline from pre-loaded model: {e}")
+            return None
+    else:
+        try:
+            pipe = _load_judge(model_id)
+        except Exception as e:
+            print(f"  [llm_judge] could not load judge: {e}")
+            return None
 
     prompt = JUDGE_PROMPT.format(question=question, gold=gold, pred=pred)
     try:
