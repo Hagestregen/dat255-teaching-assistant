@@ -1,0 +1,114 @@
+\section{Data}
+\label{sec:data}
+
+The system relies on three distinct data assets: (i) raw course material that backs the
+retrieval index, (ii) public machine-learning question--answer (QA) collections used as
+auxiliary supervision, and (iii) a synthetic task-specific corpus generated from the course
+material to teach the model the four output formats. The synthetic corpus is described in
+Section~\ref{sec:training_data} together with the model implementation, since its construction
+is tightly coupled to the training objective. This section describes the first two and the
+indexing pipeline that turns the course material into a searchable RAG index.
+
+\subsection{Course material}
+
+The primary source is \textit{Deep Learning with Python} (3rd ed.) by F.\ Chollet
+\cite{chollet2024dlwithpython}, the textbook used in DAT255. The chapters were converted to
+Markdown so that the natural document hierarchy --- chapter, section, subsection --- is
+preserved as explicit \texttt{\#}, \texttt{\#\#}, \texttt{\#\#\#} headers. Markdown was chosen
+over plain PDF text extraction because the heading structure is a reliable signal of topical
+boundaries. Cutting on header boundaries produces chunks that correspond to a single coherent
+idea, which both improves retrieval relevance and avoids splitting an explanation halfway
+through.
+
+\subsection{Public QA datasets}
+
+Two public QA collections from HuggingFace,
+\texttt{prsdm/\allowbreak Machine-\allowbreak Learning-\allowbreak QA-\allowbreak dataset}
+and
+\texttt{win-wang/\allowbreak Machine\_\allowbreak Learning\_\allowbreak QA\_\allowbreak Collection},
+were used as a general machine-learning corpus. Together they contain several thousand
+short-form QA pairs covering supervised learning, neural networks, optimisation, and related
+topics. Their value is breadth: they expose the model to a wider distribution of phrasings
+than the course book alone and reduce overfitting to the textbook style. Their main
+limitation is that they are not specific to the DAT255 syllabus; they are therefore used
+only as an auxiliary signal and do not appear in the test split.
+
+\subsection{RAG indexing pipeline}
+
+The RAG pipeline is a three-stage process: chunking, embedding, and indexing
+(Figure~\ref{fig:rag_pipeline}). Each stage is a separate Python script with explicit
+inputs and outputs, which makes it cheap to re-run a single stage in isolation when the
+upstream data changes.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=0.45cm and 0.7cm]
+
+    \node[data] (md)        {\texttt{.md} files \\ \footnotesize(course book)};
+    \node[block, right=of md] (chunker) {\texttt{chunker.py} \\ \footnotesize header-aware split};
+    \node[data, right=of chunker] (chunks) {\texttt{chunks.json} \\ \footnotesize 1\,960 entries};
+    \node[block, right=of chunks] (embed) {\texttt{embedder.py} \\ \footnotesize bge-base 768d};
+    \node[data, right=of embed] (idx) {\texttt{rag\_index/} \\ \footnotesize HNSW + meta};
+
+    \node[block, below=1cm of embed] (retr) {\texttt{retriever.py}};
+    \node[data, left=1.6cm of retr] (q) {Query};
+    \node[data, right=1.4cm of retr] (topk) {Top-$k$ chunks};
+
+    \draw[arrow] (md) -- (chunker);
+    \draw[arrow] (chunker) -- (chunks);
+    \draw[arrow] (chunks) -- (embed);
+    \draw[arrow] (embed) -- (idx);
+    \draw[arrow] (idx) -- (retr);
+    \draw[arrow] (q) -- (retr);
+    \draw[arrow] (retr) -- (topk);
+
+\end{tikzpicture}
+\caption{RAG indexing and retrieval pipeline. The first three stages run offline; only the
+retriever runs at inference time.}
+\label{fig:rag_pipeline}
+\end{figure}
+
+\paragraph{Chunking.}
+\texttt{chunker.py} reads a manifest of Markdown files and splits them in two passes. The
+first pass walks the document tree and emits one chunk per heading section at any of four
+levels (\texttt{\#}, \texttt{\#\#}, \texttt{\#\#\#}, \texttt{\#\#\#\#}). Every header section
+is then re-fed through a recursive character splitter with a 600-character target size and
+80-character overlap between consecutive sub-chunks; the overlap preserves context across
+the boundary and reduces edge-effect retrieval misses. Sub-chunks shorter than 80 characters
+(typically empty header stubs) are discarded. Each chunk is stored together with breadcrumb
+metadata (\texttt{h1 > h2 > h3}) so retrieved passages can be displayed with full provenance.
+The resulting corpus contains 1\,960 chunks.
+
+\paragraph{Embedding and indexing.}
+\texttt{embedder.py} encodes each chunk with the \texttt{BAAI/bge-base-en-v1.5} sentence
+encoder \cite{xiao2023cpack}, a 768-dimensional model that ranks competitively on MTEB while
+remaining small enough to run on a single consumer GPU. A lighter \texttt{all-MiniLM-L6-v2}
+sentence-transformers model in the spirit of Sentence-BERT~\cite{reimers2019sentence} is
+supported as a CPU fallback. The embeddings are stored in
+an HNSW approximate-nearest-neighbour index \cite{malkov2020hnsw} via the \texttt{hnswlib}
+library. HNSW was chosen over a flat index because $O(\log N)$ search keeps inference latency
+flat as the corpus grows; flat search would have been adequate at the current size but would
+not scale to a multi-course expansion.
+
+\paragraph{A note on tokeniser separation.}
+The retriever uses the BGE encoder's BERT-style WordPiece tokenizer internally to produce
+semantic embeddings. The generator uses a separate tiktoken-based GPT-2 byte-pair encoding
+(BPE) tokeniser (Section~\ref{sec:tokenizer}). The two tokenisers serve different purposes
+--- the first exists to compute a similarity vector for search, the second to feed integer
+IDs into the generator's embedding layer --- and are deliberately not shared.
+
+\paragraph{Format of an indexed chunk.}
+Each entry in \texttt{chunks.json} stores both the raw text and the breadcrumb that
+locates it in the source book:
+
+\begin{quote}\small\ttfamily
+\{ \\
+\hspace*{1em}"text": "Artificial intelligence was b...", \\
+\hspace*{1em}"source": ".../ch01\_what\_is\_deep\_learning.md", \\
+\hspace*{1em}"metadata": \{ \\
+\hspace*{2em}"h1": "Chapter 1: What is deep learning?", \\
+\hspace*{2em}"h2": "Artificial intelligence", \\
+\hspace*{2em}"breadcrumb": "Deep Learning with Python > Chapter 1 > Artificial intelligence" \\
+\hspace*{1em}\} \\
+\}
+\end{quote}

@@ -1,0 +1,63 @@
+\section{Conclusion}
+
+\subsection*{Summary}
+
+The project set out to build a teaching assistant for DAT255 that is grounded in the course
+material and that can produce four distinct study formats: explanations, multiple-choice
+quizzes, long-answer practice with feedback, and flashcards. The implemented system meets the
+mandatory course requirements: a use case is identified, a decoder-only transformer is
+constructed and trained from random initialisation, and an objective evaluation is conducted.
+Beyond the mandatory items, a retrieval-augmented generation pipeline is built around the
+course book, four model configurations are compared on the same task data, and the result is
+deployed as an interactive Gradio application.
+
+The architectural starting point was the nanoGPT/GPT-2 small design, extended with rotary
+positional embeddings and a key/value cache for faster autoregressive decoding. RMSNorm,
+SwiGLU and stochastic depth were implemented as toggleable variants but left disabled in
+the reported runs so that the warm-started checkpoint loads cleanly from GPT-2's published
+weights. The tokeniser was extended with four task-specific special tokens so that one
+model can serve all four study activities from a single prompt convention. Training data
+for those four formats was synthesised locally with Qwen2.5-7B-Instruct from the chunked
+course book, sidestepping the cost and rate limits of API-based generation.
+
+\subsection*{Reflection on results}
+
+The most informative comparison turned out not to be the absolute judge score, but the gap
+between perplexity and format compliance. Validation perplexity decreased smoothly throughout
+training while format compliance for the quiz task --- four lettered options followed by an
+answer letter and a one-line explanation --- fluctuated by tens of percentage points between
+adjacent checkpoints. This is consistent with the observation in \cite{zheng2023judging}
+that intrinsic language-model metrics correlate weakly with output quality on structured
+generation tasks; in retrospect, format compliance should have been the primary
+checkpoint-selection criterion from the start rather than an addition introduced
+mid-project.
+
+The custom transformer is not expected to outperform Qwen2.5-3B on free-form correctness,
+and this is not a meaningful failure: a model more than twenty times smaller, trained on a
+single GPU, was never going to beat a 3\,B model pretrained on a web-scale corpus. The
+purpose of training a model from scratch was to satisfy the mandatory criterion and to make
+the engineering trade-offs concrete. The interesting deployment finding is the opposite of
+the conventional one --- on the structured tasks, the small model that has \emph{seen} the
+target format around a thousand times is more reliable at producing parseable output than a
+much larger model relying on in-context examples. For a quiz tab in production, ``always
+emits the expected lettered structure'' is more valuable than ``occasionally writes more
+elegant prose''.
+
+\subsection*{Limitations and further work}
+
+Three limitations are worth flagging. First, the synthetic training data inherits whatever
+hallucinations Qwen produces; manual inspection of a random subset caught a handful of
+factually incorrect quiz answers, and a more thorough validation pass --- ideally with
+multiple judges --- would tighten the upper bound on correctness. Second, the LLM-as-judge
+metric is convenient but not free of bias: large LLMs used as judges have been shown to
+favour longer, more verbose answers, which advantages the larger models in the comparison.
+A small human evaluation on a fixed subset would calibrate the absolute numbers. Third, the
+retrieval
+component is currently single-pass; a re-ranker on top of the HNSW shortlist, or a small
+fine-tune of the BGE encoder on the QA pairs, would likely improve NDCG without changing
+the generator side at all.
+
+Natural extensions of the project include multi-turn conversation in the \emph{ask} tab, an
+automated pipeline that re-indexes when course material changes, and replacing Qwen with a
+quantised open-weight alternative (for example LLaMA-3 8B in GGUF form) once compute permits,
+keeping the same retrieval and evaluation infrastructure in place.

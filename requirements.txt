@@ -38,6 +38,7 @@ trafilatura
 bs4
 moviepy         # for mp4 to mp3 conversion (audio extraction)
 faster-whisper  # for transcription of audio to text
+pymupdf         # for extracting text from PDFs
 
 # Teaching assistant model libraries
 gradio

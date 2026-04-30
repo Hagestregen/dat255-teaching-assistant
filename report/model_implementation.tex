@@ -1,0 +1,266 @@
+\section{Model Implementation}
+\label{sec:model}
+
+\subsection{Architecture}
+
+The generator is a decoder-only transformer~\cite{vaswani2017attention}. The structural
+backbone --- causal self-attention, pre-norm LayerNorm, GELU feed-forward blocks, weight tying
+between the input embedding and the language model head, and the $\mathcal{N}(0, 0.02)$
+initialisation scheme with the residual-scaled projection variance \cite{radford2019gpt2}
+and the \texttt{c\_attn}/\texttt{c\_proj} naming convention --- follows
+nanoGPT~\cite{karpathy2022nanogpt}, a clean reimplementation of the GPT-2 small design.
+Two departures from that baseline are used in the reported runs: rotary positional
+embeddings, which replace GPT-2's learned absolute positions, and a key/value cache for
+faster autoregressive decoding. The codebase additionally supports RMSNorm, a SwiGLU
+feed-forward variant, and stochastic depth, all introduced in modern open-weight models
+such as LLaMA~\cite{touvron2023llama}; these are available behind flags but were left
+disabled in the reported runs so that the warm-started checkpoint stays binary-compatible
+with GPT-2's pretrained weights. The forward pass is sketched in
+Figure~\ref{fig:architecture}.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=0.4cm]
+
+    % Input
+    \node[data] (tokens) {Token IDs \\ \footnotesize $(B, T)$};
+    \node[block, above=of tokens] (embed) {Token embedding \\ \footnotesize tied to LM head};
+
+    % Block (single)
+    \node[draw=black!50, dashed, rounded corners=4pt, fill=gray!3,
+          minimum width=8.5cm, minimum height=5.6cm,
+          above=of embed, yshift=0.3cm] (blockbox) {};
+    \node[smallnote, anchor=south east] at ($(blockbox.south east)+(-0.2,0.15)$) {$\times N$ blocks};
+
+    \node[block, above=1.4cm of embed, fill=blue!4] (norm1) {LayerNorm};
+    \node[block, above=of norm1, fill=blue!8] (attn) {Causal multi-head attention \\ \footnotesize with RoPE on Q,K (+ KV cache)};
+    \node[block, above=of attn, fill=blue!4] (norm2) {LayerNorm};
+    \node[block, above=of norm2, fill=blue!8] (ffn) {GELU FFN \\ \footnotesize hidden $4d$};
+
+    % Final norm + head
+    \node[block, above=1.6cm of ffn] (normf) {LayerNorm};
+    \node[block, above=of normf] (head) {LM head \\ \footnotesize logits $(B, T, V)$};
+
+    % Edges
+    \draw[arrow] (tokens) -- (embed);
+    \draw[arrow] (embed) -- (norm1);
+    \draw[arrow] (norm1) -- (attn);
+    \draw[arrow] (attn) -- (norm2);
+    \draw[arrow] (norm2) -- (ffn);
+    \draw[arrow] (ffn) -- (normf);
+    \draw[arrow] (normf) -- (head);
+
+\end{tikzpicture}
+\caption{Forward pass of the custom transformer. Pre-norm LayerNorm wraps causal multi-head
+attention (with RoPE applied to queries and keys) and a GELU feed-forward block. $V = 50\,261$
+tokens, $d = 768$, $N = 12$.}
+\label{fig:architecture}
+\end{figure}
+
+\paragraph{Rotary positional embeddings.}
+Position information is injected by rotating the query and key projections by an angle that
+depends on the absolute position of each token~\cite{su2024roformer}. Unlike learned absolute
+embeddings, RoPE makes the relative position between two tokens an explicit feature of the
+attention dot product, which extrapolates better to sequence lengths not seen during training
+and is the dominant choice in current open-weight models.
+
+\paragraph{Available architecture variants.}
+Three modern alternatives are implemented and toggleable at construction time but are not
+enabled in the reported runs. RMSNorm~\cite{zhang2019rmsnorm} drops the mean-centring term
+of LayerNorm; the SwiGLU gating variant~\cite{shazeer2020glu}, $\mathrm{FFN}(x) = (x W_1
+\odot \mathrm{SiLU}(x W_2)) W_3$ with inner dimension $\approx \tfrac{8}{3}d$, replaces the
+GELU FFN; and stochastic depth~\cite{huang2016stochastic} drops residual sub-blocks with a
+linearly increasing probability across depth. These are all enabled by command-line flags
+(\texttt{--use-rmsnorm}, \texttt{--ffn-variant swiglu}, \texttt{--stochastic-depth}); leaving
+them off keeps the architecture binary-compatible with GPT-2 small, which is required for
+the warm-start checkpoint to load cleanly.
+
+\paragraph{KV cache.}
+At inference time, autoregressive decoding recomputes the same key and value projections for
+every previously generated token. The implementation caches them so each new step only
+projects the most recent token, reducing the per-step cost from $O(T^2)$ to $O(T)$ when
+sampling long outputs (notably for the \emph{review} task).
+
+\paragraph{Hyperparameters.}
+Table~\ref{tab:hyperparams} summarises the architectural settings. The model has roughly
+124\,M parameters with weight tying, matching the GPT-2 small geometry.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Layers ($N$)                & 12 \\
+Attention heads             & 12 \\
+Embedding dimension ($d$)   & 768 \\
+FFN hidden dim              & 3\,072 ($4d$, GELU) \\
+Context length              & 512 tokens \\
+Positional encoding         & RoPE \\
+Normalisation               & LayerNorm (pre-norm) \\
+Linear biases               & enabled (GPT-2 compatibility) \\
+Vocabulary                  & GPT-2 BPE + 4 task tokens (50\,261) \\
+\bottomrule
+\end{tabular}
+\caption{Architecture settings of the custom transformer (GPT-2 small geometry).}
+\label{tab:hyperparams}
+\end{table}
+
+Attention is computed via \texttt{torch.nn.functional.scaled\_dot\_product\_attention}, which
+dispatches to a FlashAttention kernel when one is available and falls back to a memory-safe
+reference implementation otherwise.
+
+\subsection{Tokenisation and task tokens}
+\label{sec:tokenizer}
+
+The four task formats --- explanation, quiz, review, flashcard --- are signalled to the model
+by four dedicated special tokens that prefix every example. Reusing GPT-2's existing BPE
+vocabulary avoided retraining a tokeniser from scratch, but four IDs had to be appended to
+the vocabulary:
+
+\begin{center}\small
+\begin{tabular}{lll}
+\toprule
+\texttt{<|explain|>} & ID 50\,257 & free-form explanation \\
+\texttt{<|quiz|>}    & ID 50\,258 & multiple-choice quiz \\
+\texttt{<|review|>}  & ID 50\,259 & long-answer + scored review \\
+\texttt{<|flashcard|>} & ID 50\,260 & front/back card \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The implementation rebuilds the tiktoken \texttt{gpt2} encoding with the four extra entries
+in the \texttt{special\_tokens} table, preserving the original 50\,256 BPE merges and
+the \texttt{<|endoftext|>} marker (ID 50\,256) used as end-of-sequence. The model's embedding
+table and language model head are sized to 50\,261 to match. Conditioning on a task token in
+this way is a lightweight alternative to training separate heads per task: a single forward
+pass covers all four activities, and the routing decision is made by one BPE token at the
+start of each prompt rather than by a learned classifier head.
+
+\subsection{Synthetic training data}
+\label{sec:training_data}
+
+A model trained from random initialisation on the public QA corpora alone would learn to
+answer general machine-learning questions, but it would not learn to emit the four task
+formats above. To produce supervision for those formats, an instruction-tuned local model,
+\texttt{Qwen2.5-7B-Instruct}~\cite{yang2024qwen25}, was used to generate task-specific
+training examples from the chunks indexed in Section~\ref{sec:data}. Running the data
+generator locally avoided API costs and let the same chunk be expanded into all four task
+types in a single pass over the corpus. Figure~\ref{fig:datagen} sketches the pipeline.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=0.5cm and 0.7cm]
+    \node[data] (chunks) {Indexed chunks \\ \footnotesize \texttt{chunks.json}};
+    \node[block, right=of chunks] (qwen) {Qwen2.5-7B \\ \footnotesize 4 task prompts};
+
+    \node[data, right=1.3cm of qwen, yshift=1.5cm]   (e) {\texttt{explanation}};
+    \node[data, right=1.3cm of qwen, yshift=0.5cm]   (q) {\texttt{quiz}};
+    \node[data, right=1.3cm of qwen, yshift=-0.5cm]  (r) {\texttt{review}};
+    \node[data, right=1.3cm of qwen, yshift=-1.5cm]  (f) {\texttt{flashcard}};
+
+    \node[data, right=1.5cm of q, yshift=-0.5cm] (jsonl) {\texttt{train.jsonl}};
+
+    \draw[arrow] (chunks) -- (qwen);
+    \draw[arrow] (qwen.east) -- (e.west);
+    \draw[arrow] (qwen.east) -- (q.west);
+    \draw[arrow] (qwen.east) -- (r.west);
+    \draw[arrow] (qwen.east) -- (f.west);
+    \draw[arrow] (e.east) -- (jsonl.north west);
+    \draw[arrow] (q.east) -- (jsonl.west);
+    \draw[arrow] (r.east) -- (jsonl.west);
+    \draw[arrow] (f.east) -- (jsonl.south west);
+\end{tikzpicture}
+\caption{Synthetic data generation. Each indexed chunk yields one example per task type.
+Resume state is tracked by SHA-1 hash of the chunk text, so an interrupted run continues at
+chunk granularity rather than chapter granularity.}
+\label{fig:datagen}
+\end{figure}
+
+A single line of \texttt{train.jsonl} stores the structured task fields together with a raw
+\texttt{"text"} field that captures Qwen's generation. At training time
+\texttt{dataset.py::format\_for\_training} re-renders each example into the canonical string
+that the model actually sees; for a \emph{quiz} record this string is
+
+\begin{quote}\footnotesize\ttfamily
+<|quiz|> Question: $\langle q\rangle$ \\
+A) $\langle$option 0$\rangle$ \\
+B) $\langle$option 1$\rangle$ \\
+C) $\langle$option 2$\rangle$ \\
+D) $\langle$option 3$\rangle$ \\
+Answer: $\langle$letter$\rangle$) $\langle$correct option$\rangle$. $\langle$explanation$\rangle$<|endoftext|>
+\end{quote}
+
+(\emph{explain}, \emph{review} and \emph{flashcard} use analogous templates with a different
+prefix token.) Re-rendering at load time means the structured fields stay authoritative ---
+format-validity metrics (Section~\ref{sec:evaluation}) read them directly rather than
+re-parsing the generated string. The \texttt{chunk\_hash} provides a stable resume key:
+an earlier implementation that tracked progress by chapter source path skipped every chunk
+in a chapter once the first one was processed; switching to a SHA-1 hash of the chunk text
+fixed this and made interrupted runs safely restartable.
+
+For the explanation and flashcard tasks, Qwen is asked to write a request and the
+corresponding response in the voice of a teaching assistant. For \emph{quiz}, the prompt
+constrains the output to a strict JSON schema with four options and a \texttt{correct\_index}
+field. For \emph{review}, Qwen first generates a question and a plausible (and deliberately
+imperfect) student answer, then writes a graded review of that answer with a numeric score
+and a reference answer. The reference answer is what the model is later judged against.
+
+The validity of the generated data is checked by a \texttt{--validate} pass that re-parses
+each line and rejects entries with malformed task fields, missing context, or a length below
+a minimum threshold; rejected entries are not used in training.
+
+\subsection{Training procedure}
+
+The model is trained with the standard autoregressive cross-entropy objective over the
+re-rendered \texttt{text} field. Loss is computed on every token (no prefix masking), since
+the task prefix and context are themselves part of the in-distribution sequences the model
+needs to learn to recognise. Label smoothing of $0.05$ is applied to discourage extreme
+logit values and improve calibration on the structured tasks where an overconfident wrong
+token breaks the expected output shape.
+
+Two custom-transformer runs are reported. The \texttt{scratch\_125m} run trains the model
+from random $\mathcal{N}(0, 0.02)$ initialisation. The \texttt{gpt2\_warm\_full} run starts
+from the same architecture but loaded with weights from \texttt{openai-community/gpt2}; the
+warm start is the reason the architecture is kept binary-compatible with GPT-2 small.
+
+\paragraph{Optimisation.}
+The optimiser is AdamW~\cite{loshchilov2019decoupled} with $\beta_1 = 0.9$, $\beta_2 = 0.95$
+and weight decay $0.1$. Parameter groups are split by parameter \emph{name}, not by tensor
+shape: every embedding-like parameter is excluded from weight decay regardless of its
+dimensionality. This is a small but important correction relative to the common shape-based
+heuristic, which silently regularises the embedding table on tied-weight models. Gradient
+norms are clipped to $1.0$. The \texttt{scratch\_125m} run uses a peak learning rate of
+$3 \times 10^{-4}$ with 200 linear warmup steps; \texttt{gpt2\_warm\_full} drops the peak to
+$1 \times 10^{-4}$ with 100 warmup steps, since the GPT-2 weights already sit close to a
+useful basin and a smaller step keeps the warm-started transformer from diverging early.
+Both runs share a cosine decay to $\mathrm{min\_lr} = 3 \times 10^{-5}$ over a total budget
+of 8\,000 optimiser steps.
+
+\paragraph{Hardware utilisation.}
+Training runs on a single NVIDIA RTX 3090. Forward and backward passes use \texttt{bfloat16}
+autocasting; the master weights stay in \texttt{float32}. The model is wrapped in
+\texttt{torch.compile} to fuse the attention and FFN kernels. With a per-step batch size of
+16 and gradient accumulation of 4, the effective batch size is 64 sequences of 512 tokens.
+
+\paragraph{Training-time RAG context mixing.}
+Half of the training prompts (\texttt{--rag-context-prob 0.5}) are prefixed with the chunk
+that originally seeded the synthetic example, formatted as a \texttt{Context: $\langle$chunk$\rangle$}
+block. The other half are presented bare, exactly as the model will see them when retrieval
+is unavailable at inference time. Mixing both regimes during training stops the model from
+overfitting to the always-context distribution and was found, in earlier exploratory runs,
+to make the warm-started checkpoint robust to with/without-context prompts at evaluation
+time without changing the model architecture.
+
+\paragraph{Stabilisation tricks.}
+An exponential moving average (EMA) of the parameters is maintained alongside the live
+weights, with a decay of $0.999$. The EMA copy is recorded for validation and is used as
+the source of inference weights when its loss tracks the live weights. Early stopping on
+validation loss has a patience of 5 validation intervals (one validation interval = 400
+optimiser steps), which prevents long-tail overfitting on the smaller in-domain split.
+
+\paragraph{Logging.}
+Training and validation curves are streamed to Weights \& Biases. In addition to standard
+loss and perplexity, the validation loop logs per-task validation losses (one per task
+prefix) and a small number of decoded samples per task, so that drift in any single task
+format is visible in the dashboard rather than hidden inside an aggregate metric.

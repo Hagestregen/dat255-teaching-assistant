@@ -134,3 +134,23 @@ scratch/
 archive/v1_data_894ex/checkpoints/
 archive/v1_data_894ex/runs/
 archive/v1_data_894ex/eval_results/
+
+
+# =============================================================================
+# Latex 
+# ============================================================================
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.log
+*.out
+*.pdf
+*.synctex.gz
+*.toc
+*.lot
+*.lof
+*.bcf
+
+report/*.pdf

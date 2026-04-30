@@ -1,0 +1,135 @@
+\section{Evaluation}
+\label{sec:evaluation}
+
+\subsection{Models compared}
+
+Four configurations are evaluated. They span two architectural choices --- a small custom
+transformer versus a much larger pretrained model --- and, within each choice, a comparison of
+training from scratch (or zero-shot) against a model that has been adapted to the task data.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{3.4cm}p{3.0cm}p{2.6cm}p{4.2cm}}
+\toprule
+\textbf{Model} & \textbf{Initialisation} & \textbf{Training data} & \textbf{Role} \\
+\midrule
+Custom transformer (scratch) & Random ($\mathcal{N}(0, 0.02)$) & Synthetic + public QA &
+Fulfils mandatory ``train one model from scratch'' criterion. \\
+Custom transformer (GPT-2 init) & GPT-2 small weights & Synthetic + public QA &
+Same architecture, warm-started from a pretrained checkpoint. \\
+Qwen2.5-3B-Instruct & Pretrained, frozen & --- & Strong zero-shot reference. \\
+Qwen2.5-3B-Instruct + LoRA & Pretrained + LoRA adapters & Synthetic & Parameter-efficient
+fine-tune on the synthetic task data \cite{hu2022lora}. \\
+\bottomrule
+\end{tabular}
+\caption{The four configurations under comparison. Only the first two are decoder-only models
+trained on this project's hardware; the second pair establishes how close a small custom model
+gets to a much larger off-the-shelf instruction-tuned model.}
+\label{tab:models}
+\end{table}
+
+The two custom configurations isolate the contribution of pretraining on a generic web
+corpus, holding the architecture constant. The two Qwen configurations isolate the
+contribution of LoRA fine-tuning on the synthetic data, holding the base model constant. All
+four models are wrapped behind the same RAG retriever, so any difference reflects generation
+quality rather than retrieval.
+
+\subsection{Metrics}
+
+Four complementary metrics are reported. Two are intrinsic to the language model
+(perplexity, format compliance), and two are extrinsic, judging the usefulness of the output
+to a student (correctness, retrieval relevance).
+
+\paragraph{Validation perplexity.}
+Standard intrinsic metric, computed on the held-out split. It reflects how well the model
+predicts the next token but, on its own, has known weaknesses as a proxy for output
+quality~\cite{zheng2023judging}; here it is reported mainly as a sanity check that training
+converged and as a means of comparing the two custom variants.
+
+\paragraph{Format compliance.}
+The fraction of generated outputs that parse as valid for their declared task type. For
+\emph{quiz}, the post-prompt segment must be a JSON object with the required keys and four
+distinct options. For \emph{review}, the output must contain a numeric score and a
+non-empty review text. For \emph{flashcard}, the output must contain both a front and a back
+delimited as in the training data. \emph{Explanation} is excluded since it has no rigid
+schema. This metric directly measures whether the model has learnt the task structure rather
+than merely fluent prose.
+
+\paragraph{Answer correctness (LLM-as-judge).}
+For each test query, the model's answer and a held-out reference answer are presented to
+GPT-4 with a scoring rubric that returns an integer from 1 (incorrect) to 5 (fully correct
+and well-explained). LLM-as-judge has been shown to correlate well with human ratings on
+generative tasks~\cite{zheng2023judging}. The same prompt is used for all four models so
+that the absolute scores are comparable.
+
+\paragraph{Retrieval relevance.}
+Independent of the generator, the retrieval component is evaluated using normalised
+discounted cumulative gain at $k=3$ (NDCG@3) against a manually annotated relevance set of
+30 course-specific queries. This metric is shared across all four models because they use
+the same retriever.
+
+\subsection{Results}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Val.\ ppl} ($\downarrow$) & \textbf{Format compl.} ($\uparrow$) &
+\textbf{Judge score} ($\uparrow$) & \textbf{Inference (s/req)} \\
+\midrule
+Custom (scratch)            & \textit{tbd} & \textit{tbd} & \textit{tbd} & \textit{tbd} \\
+Custom (GPT-2 init)         & \textit{tbd} & \textit{tbd} & \textit{tbd} & \textit{tbd} \\
+Qwen2.5-3B-Instruct         & ---          & \textit{tbd} & \textit{tbd} & \textit{tbd} \\
+Qwen2.5-3B-Instruct + LoRA  & \textit{tbd} & \textit{tbd} & \textit{tbd} & \textit{tbd} \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of the four configurations. Validation perplexity is not reported for the
+zero-shot Qwen baseline since it is not trained on the task data.}
+\label{tab:results}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Retriever} & \textbf{NDCG@3} ($\uparrow$) & \textbf{Recall@5} ($\uparrow$) \\
+\midrule
+\texttt{BAAI/bge-base-en-v1.5} (used)  & \textit{tbd} & \textit{tbd} \\
+\texttt{all-MiniLM-L6-v2} (CPU baseline) & \textit{tbd} & \textit{tbd} \\
+TF--IDF                                 & \textit{tbd} & \textit{tbd} \\
+\bottomrule
+\end{tabular}
+\caption{Retrieval-only ablation on 30 manually annotated queries. The TF--IDF row tests
+whether the dense retriever adds value over a classical sparse baseline.}
+\label{tab:retrieval}
+\end{table}
+
+\textit{[Final numbers will be filled in once all four training runs and the LoRA adaptation
+have finished. The placeholder rows indicate the structure of the comparison.]}
+
+\subsection{Discussion}
+
+The expected ordering of the four models on the judge score is:
+Qwen+LoRA $\geq$ Qwen zero-shot $>$ Custom (GPT-2 init) $>$ Custom (scratch). The custom
+models are not expected to outperform the Qwen baseline on absolute correctness; the
+$\sim$26\,M-parameter model has roughly two orders of magnitude fewer parameters than the
+3\,B Qwen baseline, and a fair fraction of its capacity is consumed by simply learning
+fluent English. The interesting comparisons are therefore the two pairwise differences:
+how much warm-starting from GPT-2 buys over random initialisation, and how much LoRA
+fine-tuning buys over the zero-shot Qwen baseline.
+
+Format compliance is expected to favour the custom models more than the judge score does:
+the synthetic training corpus exposes the custom models to thousands of valid quiz JSON
+objects, while the zero-shot Qwen has only the few-shot examples in the prompt. This is the
+practical justification for the small model in deployment. Even if its prose is less polished,
+a model that always emits parseable JSON is more useful inside the quiz tab than a model
+whose output frequently breaks the parser.
+
+Validation perplexity is reported as a training diagnostic only. During development, the
+format-compliance percentage on the validation set was found to be a much better
+checkpoint-selection signal than perplexity --- runs with similar perplexity differed by
+tens of percentage points in JSON validity --- and was used as the primary stopping
+criterion.
