@@ -264,3 +264,22 @@ Training and validation curves are streamed to Weights \& Biases. In addition to
 loss and perplexity, the validation loop logs per-task validation losses (one per task
 prefix) and a small number of decoded samples per task, so that drift in any single task
 format is visible in the dashboard rather than hidden inside an aggregate metric.
+
+\paragraph{Training curve.}
+Figure~\ref{fig:from_scratch} shows the training and validation loss curves for the
+\texttt{scratch\_125m} run. The training loss decreases steadily and converges, confirming
+that the model is able to learn from the data. The validation loss, however, rises after an
+initial dip --- a clear sign of overfitting. Given the relatively small model size and the
+limited amount of synthetic in-domain training data, this behaviour is expected: the model
+has enough capacity to memorise the training set but insufficient generalisation signal to
+improve on held-out examples. That it \emph{can} overfit at all demonstrates that the
+training loop, data pipeline, and architecture are all functioning correctly.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\textwidth]{from_scratch.png}
+\caption{Training and validation loss for the \texttt{scratch\_125m} run. Training loss
+converges while validation loss increases, indicating overfitting due to the small model
+size and limited training data.}
+\label{fig:from_scratch}
+\end{figure}

@@ -22,7 +22,7 @@ development straightforward. Figure~\ref{fig:app} shows the structure.
     \node[model, below=2.0cm of prac, xshift=1.6cm] (gen) {Generator \\ \footnotesize (custom / Qwen)};
 
     \node[data, below=0.6cm of rag, xshift=0cm] (idx2) {\texttt{rag\_index/}};
-    \node[data, below=0.6cm of gen, xshift=0cm] (prog) {\texttt{progress.json} \\ \footnotesize (--track)};
+    % \node[data, below=0.6cm of gen, xshift=0cm] (prog) {\texttt{progress.json} \\ \footnotesize (--track)};
 
     \draw[arrow] (app) -- (ask);
     \draw[arrow] (app) -- (quiz);
@@ -40,22 +40,18 @@ development straightforward. Figure~\ref{fig:app} shows the structure.
     \draw[arrow] (flash) -- (gen);
 
     \draw[arrow] (rag) -- (idx2);
-    \draw[arrow] (gen) -- (prog);
+    % \draw[arrow] (gen) -- (prog);
 
 \end{tikzpicture}
 \caption{Deployment topology. Each tab calls the same retriever and the same generator; the
-only thing that changes between tabs is the task token prepended to the prompt. With
-\texttt{--track}, the practice and quiz tabs append per-question outcomes to a local
-\texttt{progress.json} so the user can see which topics are still weak.}
+only thing that changes between tabs is the task token prepended to the prompt.}
 \label{fig:app}
 \end{figure}
 
 \paragraph{Runtime modes.}
-The app supports three CLI configurations. The first (\texttt{--pretrained qwen-3b}) loads
-Qwen2.5-3B-Instruct as the generator and runs without progress tracking; this is the
-``random study'' mode. The second adds \texttt{--index ../rag/rag\_index} to enable RAG-backed
-retrieval. The third additionally passes \texttt{--track} to write a local progress log,
-which the flashcard tab uses to surface cards the user has answered incorrectly.
+The app supports two CLI configurations. The first (\texttt{--pretrained qwen-3b}) loads
+Qwen2.5-3B-Instruct as the generator without retrieval. The second adds
+\texttt{--index ../rag/rag\_index} to enable RAG-backed retrieval.
 
 \paragraph{Why Gradio.}
 Gradio was chosen over a hand-built web stack because the project deliverable is the model,
@@ -63,6 +59,14 @@ not the UI. Its tab/component primitives map almost one-to-one onto the four tas
 and a single function call serves the application from a public URL. The
 retriever and generator are loaded once at startup and reused across requests, so the only
 per-request cost is the embedding of the query and the autoregressive decode.
+
+\paragraph{Public access.}
+The application is exposed to the internet via a Cloudflare tunnel running on the same
+machine as the GPU. At the time of writing the live URL is
+\url{https://amy-appear-predict-shadow.trycloudflare.com/}.
+Cloudflare tunnel addresses are ephemeral; if the address changes the current URL will be
+updated in the project repository at
+\url{https://github.com/Hagestregen/dat255-teaching-assistant}.
 
 \paragraph{Maintenance.}
 Because the RAG index, the generator, and the UI are decoupled, each can be replaced

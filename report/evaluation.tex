@@ -3,9 +3,12 @@
 
 \subsection{Models compared}
 
-Four configurations are evaluated. They span two architectural choices --- a small custom
-transformer versus a much larger pretrained model --- and, within each choice, a comparison of
-training from scratch (or zero-shot) against a model that has been adapted to the task data.
+Four configurations are evaluated on a held-out test split derived from the synthetic
+training data. They span two architectural choices --- a custom 125\,M-parameter
+transformer versus the much larger pretrained Qwen2.5-3B --- and, within each choice, a
+comparison of from-scratch (or zero-shot) against a model that has been adapted to the
+task data. All four are wrapped behind the same retriever, so any difference in
+generation quality is attributable to the model rather than to retrieval.
 
 \begin{table}[h]
 \centering
@@ -14,9 +17,9 @@ training from scratch (or zero-shot) against a model that has been adapted to th
 \toprule
 \textbf{Model} & \textbf{Initialisation} & \textbf{Training data} & \textbf{Role} \\
 \midrule
-Custom transformer (scratch) & Random ($\mathcal{N}(0, 0.02)$) & Synthetic + public QA &
+Custom (scratch) & Random ($\mathcal{N}(0, 0.02)$) & Synthetic + public QA &
 Fulfils mandatory ``train one model from scratch'' criterion. \\
-Custom transformer (GPT-2 init) & GPT-2 small weights & Synthetic + public QA &
+Custom (GPT-2 init) & GPT-2 small weights & Synthetic + public QA &
 Same architecture, warm-started from a pretrained checkpoint. \\
 Qwen2.5-3B-Instruct & Pretrained, frozen & --- & Strong zero-shot reference. \\
 Qwen2.5-3B-Instruct + LoRA & Pretrained + LoRA adapters & Synthetic & Parameter-efficient
@@ -31,105 +34,92 @@ gets to a much larger off-the-shelf instruction-tuned model.}
 
 The two custom configurations isolate the contribution of pretraining on a generic web
 corpus, holding the architecture constant. The two Qwen configurations isolate the
-contribution of LoRA fine-tuning on the synthetic data, holding the base model constant. All
-four models are wrapped behind the same RAG retriever, so any difference reflects generation
-quality rather than retrieval.
+contribution of LoRA fine-tuning on the synthetic data, holding the base model constant.
 
 \subsection{Metrics}
 
-Four complementary metrics are reported. Two are intrinsic to the language model
-(perplexity, format compliance), and two are extrinsic, judging the usefulness of the output
-to a student (correctness, retrieval relevance).
+Two families of metrics are reported: reference-based surface metrics and an LLM-as-judge
+evaluation. They are complementary --- surface metrics are cheap and reproducible but
+sensitive to surface form, while the judge captures qualitative properties such as
+pedagogical clarity that no token-level metric can measure.
 
-\paragraph{Validation perplexity.}
-Standard intrinsic metric, computed on the held-out split. It reflects how well the model
-predicts the next token but, on its own, has known weaknesses as a proxy for output
-quality~\cite{zheng2023judging}; here it is reported mainly as a sanity check that training
-converged and as a means of comparing the two custom variants.
+\paragraph{Surface metrics.}
+ROUGE-L and Token-F1 were computed for completeness but are unreliable in this setting:
+a concise reference and a verbose-but-correct prediction share few tokens, which
+systematically penalises longer responses regardless of quality. BERTScore F1 is more
+robust to paraphrase, but its range compresses near $0.85$ for all in-domain text and so
+discriminates poorly between weak and strong outputs. METEOR is the most informative of
+the surface metrics here because its stemming and synonym matching reduce the sensitivity
+to length mismatch. Surface metrics are averaged over $n=200$ test examples.
 
-\paragraph{Format compliance.}
-The fraction of generated outputs that parse as valid for their declared task type. For
-\emph{quiz}, the post-prompt segment must be a JSON object with the required keys and four
-distinct options. For \emph{review}, the output must contain a numeric score and a
-non-empty review text. For \emph{flashcard}, the output must contain both a front and a back
-delimited as in the training data. \emph{Explanation} is excluded since it has no rigid
-schema. This metric directly measures whether the model has learnt the task structure rather
-than merely fluent prose.
-
-\paragraph{Answer correctness (LLM-as-judge).}
-For each test query, the model's answer and a held-out reference answer are presented to
-GPT-4 with a scoring rubric that returns an integer from 1 (incorrect) to 5 (fully correct
-and well-explained). LLM-as-judge has been shown to correlate well with human ratings on
-generative tasks~\cite{zheng2023judging}. The same prompt is used for all four models so
-that the absolute scores are comparable.
-
-\paragraph{Retrieval relevance.}
-Independent of the generator, the retrieval component is evaluated using normalised
-discounted cumulative gain at $k=3$ (NDCG@3) against a manually annotated relevance set of
-30 course-specific queries. This metric is shared across all four models because they use
-the same retriever.
+\paragraph{LLM-as-judge.}
+Each generated response is scored by \texttt{Qwen2.5-7B-Instruct} against a fixed rubric
+on three axes --- \emph{correctness}, \emph{completeness}, and \emph{pedagogical
+clarity} --- on an integer 1--5 scale. Judge scores are reported over $n=5$ examples per model;
+the small sample size and the use of a Qwen-family judge alongside Qwen-family
+configurations are discussed as limitations below.
 
 \subsection{Results}
 
 \begin{table}[h]
 \centering
+\caption{Evaluation results. Surface metrics computed over $n=200$ examples; judge
+scores over $n=5$, graded by \texttt{Qwen2.5-7B-Instruct} on a 1--5 scale.}
+\label{tab:eval}
 \small
-\begin{tabular}{lcccc}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lccccc}
 \toprule
-\textbf{Model} & \textbf{Val.\ ppl} ($\downarrow$) & \textbf{Format compl.} ($\uparrow$) &
-\textbf{Judge score} ($\uparrow$) & \textbf{Inference (s/req)} \\
+\textbf{Model}
+  & \textbf{METEOR} ($\uparrow$)
+  & \textbf{BERTScore F1} ($\uparrow$)
+  & \textbf{Correct.} ($\uparrow$)
+  & \textbf{Complete.} ($\uparrow$)
+  & \textbf{Clarity} ($\uparrow$) \\
 \midrule
-Custom (scratch)            & \textit{tbd} & \textit{tbd} & \textit{tbd} & \textit{tbd} \\
-Custom (GPT-2 init)         & \textit{tbd} & \textit{tbd} & \textit{tbd} & \textit{tbd} \\
-Qwen2.5-3B-Instruct         & ---          & \textit{tbd} & \textit{tbd} & \textit{tbd} \\
-Qwen2.5-3B-Instruct + LoRA  & \textit{tbd} & \textit{tbd} & \textit{tbd} & \textit{tbd} \\
+Custom (scratch)            & 0.157 & 0.855 & 1.4 & 1.2 & 1.2 \\
+Custom (GPT-2 init)         & 0.208 & 0.862 & 2.4 & 1.4 & 1.2 \\
+Qwen2.5-3B-Instruct         & 0.305 & 0.856 & 4.0 & 3.6 & \textbf{3.2} \\
+Qwen2.5-3B-Instruct + LoRA  & \textbf{0.375} & \textbf{0.904} & \textbf{4.0} & \textbf{3.8} & 2.8 \\
 \bottomrule
 \end{tabular}
-\caption{Comparison of the four configurations. Validation perplexity is not reported for the
-zero-shot Qwen baseline since it is not trained on the task data.}
-\label{tab:results}
 \end{table}
-
-\begin{table}[h]
-\centering
-\small
-\begin{tabular}{lcc}
-\toprule
-\textbf{Retriever} & \textbf{NDCG@3} ($\uparrow$) & \textbf{Recall@5} ($\uparrow$) \\
-\midrule
-\texttt{BAAI/bge-base-en-v1.5} (used)  & \textit{tbd} & \textit{tbd} \\
-\texttt{all-MiniLM-L6-v2} (CPU baseline) & \textit{tbd} & \textit{tbd} \\
-TF--IDF                                 & \textit{tbd} & \textit{tbd} \\
-\bottomrule
-\end{tabular}
-\caption{Retrieval-only ablation on 30 manually annotated queries. The TF--IDF row tests
-whether the dense retriever adds value over a classical sparse baseline.}
-\label{tab:retrieval}
-\end{table}
-
-\textit{[Final numbers will be filled in once all four training runs and the LoRA adaptation
-have finished. The placeholder rows indicate the structure of the comparison.]}
 
 \subsection{Discussion}
 
-The expected ordering of the four models on the judge score is:
-Qwen+LoRA $\geq$ Qwen zero-shot $>$ Custom (GPT-2 init) $>$ Custom (scratch). The custom
-models are not expected to outperform the Qwen baseline on absolute correctness; the
-$\sim$26\,M-parameter model has roughly two orders of magnitude fewer parameters than the
-3\,B Qwen baseline, and a fair fraction of its capacity is consumed by simply learning
-fluent English. The interesting comparisons are therefore the two pairwise differences:
-how much warm-starting from GPT-2 buys over random initialisation, and how much LoRA
-fine-tuning buys over the zero-shot Qwen baseline.
+The two 125\,M models sit at the bottom of every judge axis, confirming the suspicion
+that surface-metric compression masks genuinely poor output: the BERTScore values for
+all non-custom models fall within $0.855$--$0.904$, a spread that is still relatively
+compressed compared to the much larger variation in judge scores. METEOR tracks the
+judge ranking more faithfully and is the more informative of the two surface metrics in
+this setting.
 
-Format compliance is expected to favour the custom models more than the judge score does:
-the synthetic training corpus exposes the custom models to thousands of valid quiz JSON
-objects, while the zero-shot Qwen has only the few-shot examples in the prompt. This is the
-practical justification for the small model in deployment. Even if its prose is less polished,
-a model that always emits parseable JSON is more useful inside the quiz tab than a model
-whose output frequently breaks the parser.
+Initialising from GPT-2 weights nearly doubles the correctness score ($1.4 \to 2.4$),
+consistent with a warm-started model that recovers relevant terminology faster, but
+pedagogical clarity stays at $1.2$ in both small configurations. This is the qualitative
+footprint of a model that knows the right words but cannot yet string them into a
+coherent explanation --- a capacity ceiling rather than a training-time problem.
 
-Validation perplexity is reported as a training diagnostic only. During development, the
-format-compliance percentage on the validation set was found to be a much better
-checkpoint-selection signal than perplexity --- runs with similar perplexity differed by
-tens of percentage points in JSON validity --- and was used as the primary stopping
-criterion.
+The Qwen2.5-3B baseline outperforms both 125\,M models on all judge axes by a wide
+margin, confirming that on free-form correctness this project's custom model cannot
+compete with a model trained on a web-scale corpus. LoRA fine-tuning on the synthetic
+data improves both METEOR ($0.305 \to 0.375$) and BERTScore F1 ($0.856 \to 0.904$),
+indicating stronger alignment with the reference answers.
+
+Interestingly, the LoRA configuration matches the base model on correctness (4.0) and
+slightly improves completeness ($3.6 \to 3.8$), but shows a drop in pedagogical clarity
+($3.2 \to 2.8$). This suggests that while domain adaptation improves factual alignment
+and coverage, it may bias the model toward more direct or terse answers at the expense
+of explanation quality --- a common trade-off when fine-tuning on narrowly scoped
+synthetic data.
+
+Two methodological caveats apply. First, the judge sample size of $n=5$ is small;
+the gap between the two custom models ($1.4$ vs.\ $2.4$ on correctness) and the gap
+between the custom models and Qwen are large enough to survive that noise, but
+finer-grained differences (such as the clarity drop under LoRA) should be read as
+suggestive rather than statistically significant. Second, using a Qwen model as both
+synthetic-data generator and as judge couples two otherwise independent steps in the
+pipeline and may inflate the absolute scores of the Qwen-family configurations. A small
+human evaluation, or a judge from a different model family (e.g.\ a Llama- or
+Mistral-derived instruction model), would be the proper next step.
+```
