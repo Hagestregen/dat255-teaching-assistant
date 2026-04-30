@@ -7,18 +7,14 @@ Tabs:
   2. Quiz         — multiple-choice questions
   3. Long answer  — long-answer with scoring feedback
   4. Flashcards   — generate + deck browser
-  5. Progress     — curriculum coverage dashboard (tracking mode only)
-
+  
 Run:
-  # Random mode (no tracking):
+  # Pretrained mode:
   python app.py --pretrained qwen-3b
-
-  # Tracking mode:
-  python app.py --pretrained qwen-3b --index ../rag/rag_index --track
 
   # Explicit chunks path:
   python app.py --pretrained qwen-3b --index ../rag/rag_index \\
-      --track --chunks ../rag/rag_index/chunks.json --progress my_progress.json
+     --chunks ../rag/rag_index/chunks.json --progress my_progress.json
 """
 
 import argparse
@@ -44,7 +40,6 @@ from generation import get_random_chunk_in_scope, get_random_topic_from_retrieve
 _pipeline        = None   # custom RAGPipeline (checkpoint mode)
 _pretrained_pipe = None   # HuggingFace text-generation pipeline
 _retriever       = None   # standalone Retriever (pretrained mode)
-_tracker         = None   # ProgressTracker — None when tracking is off
 _topic_tree      = None   # TopicTree — built from chunks.json when available
 
 _current_quiz:          object = None
@@ -259,27 +254,15 @@ def new_quiz_question(topic_text: str, source: str | None, chapter: str | None, 
     
     print(f"breadcrumb_prefix: {breadcrumb_prefix!r}, topic_override: {topic_override!r}")
 
-    if _tracker is not None:
-        result = _tracker.next_chunk(breadcrumb_prefix=breadcrumb_prefix, topic=topic_override)
-        if result is None:
-            return ("No chunks found for that filter.", "",
-                    gr.update(choices=[]), gr.update(visible=False), "")
-        chunk_id, record       = result
-        _current_quiz_chunk_id = chunk_id
-        effective_topic        = record.topic
-        status = (
-            f"**{record.breadcrumb}**  |  "
-            f"seen {record.times_seen}x  |  accuracy {record.accuracy:.0%}"
-        )
+
+    _current_quiz_chunk_id = None
+    if topic_override:
+        effective_topic = topic_override
     else:
-        _current_quiz_chunk_id = None
-        if topic_override:
-            effective_topic = topic_override
-        else:
-            prefetched_chunk, effective_topic = _pick_random_chunk_and_topic(
-                retriever, breadcrumb_prefix
-            )
-        status = f"Topic: *{effective_topic}*"
+        prefetched_chunk, effective_topic = _pick_random_chunk_and_topic(
+            retriever, breadcrumb_prefix
+        )
+    status = f"Topic: *{effective_topic}*"
 
     print(f"effective_topic: {effective_topic!r}")
 
@@ -310,9 +293,6 @@ def submit_quiz_answer(selected: str):
 
     idx     = "ABCD".index(selected[0])
     correct = idx == _current_quiz.correct_index
-
-    if _tracker is not None and _current_quiz_chunk_id is not None:
-        _tracker.record(_current_quiz_chunk_id, correct)
 
     if correct:
         return f"Correct!\n\n{_current_quiz.explanation}"
@@ -350,29 +330,16 @@ def generate_feedback_question(topic_text: str, source: str | None, chapter: str
     breadcrumb_prefix, topic_override = _resolve_filter(source, chapter, section, topic_text)
     prefetched_chunk = None
 
-    if _tracker is not None:
-        result = _tracker.next_chunk(breadcrumb_prefix=breadcrumb_prefix, topic=topic_override)
-        if result:
-            chunk_id, record     = result
-            _current_fb_chunk_id = chunk_id
-            effective_topic      = record.topic
-            status = (
-                f"**{record.breadcrumb}**  |  "
-                f"seen {record.times_seen}x  |  accuracy {record.accuracy:.0%}"
-            )
-        else:
-            _current_fb_chunk_id = None
-            effective_topic      = topic_override or ""
-            status               = "No chunks found for that filter."
+
+
+    _current_fb_chunk_id = None
+    if topic_override:
+        effective_topic = topic_override
     else:
-        _current_fb_chunk_id = None
-        if topic_override:
-            effective_topic = topic_override
-        else:
-            prefetched_chunk, effective_topic = _pick_random_chunk_and_topic(
-                retriever, breadcrumb_prefix
-            )
-        status = f"Topic: *{effective_topic}*" if effective_topic else ""
+        prefetched_chunk, effective_topic = _pick_random_chunk_and_topic(
+            retriever, breadcrumb_prefix
+        )
+    status = f"Topic: *{effective_topic}*" if effective_topic else ""
 
     question = generate_question(
         retriever        = retriever,
@@ -412,11 +379,6 @@ def review_student_answer(question: str, student_answer: str):
         retriever      = retriever,
         **_pipe_kwargs(),
     )
-
-    if _tracker is not None and _current_fb_chunk_id is not None:
-        from config import FEEDBACK_PASS_THRESHOLD
-        _tracker.record(_current_fb_chunk_id,
-                        correct=(parse_score_from_markdown(formatted) >= FEEDBACK_PASS_THRESHOLD))
 
     return formatted
 
@@ -556,45 +518,6 @@ def export_deck():
 
 
 # =============================================================================
-# Tab 5: Progress
-# =============================================================================
-
-_TRACKING_OFF_HTML = """
-<div style="font-family:system-ui,sans-serif;background:#1a202c;border-radius:14px;
-            padding:32px;color:#718096;text-align:center;max-width:600px;margin:12px auto;">
-  <div style="font-size:16px;font-weight:600;color:#a0aec0;margin-bottom:8px;">
-    Progress tracking is off
-  </div>
-  <div style="font-size:13px;line-height:1.7;">
-    Start the app with
-    <code style="background:#2d3748;padding:2px 6px;border-radius:4px;">--track</code>
-    to enable curriculum tracking.<br><br>
-    <code style="background:#2d3748;padding:6px 10px;border-radius:6px;display:inline-block;">
-    python app.py --pretrained qwen-3b --index ../rag/rag_index --track
-    </code>
-  </div>
-</div>
-"""
-
-
-def refresh_progress():
-    if _tracker is None:
-        return _TRACKING_OFF_HTML
-    from tracker import progress_to_html
-    return progress_to_html(_tracker)
-
-
-def reset_progress(source: str, chapter: str, section: str):
-    if _tracker is None:
-        return _TRACKING_OFF_HTML, "Tracking not enabled."
-    prefix = _topic_tree.breadcrumb_prefix(source, chapter, section) if _topic_tree else None
-    _tracker.reset(breadcrumb_prefix=prefix or None)
-    label = f"'{prefix}'" if prefix else "everything"
-    from tracker import progress_to_html
-    return progress_to_html(_tracker), f"Reset {label}."
-
-
-# =============================================================================
 # UI construction
 # =============================================================================
 
@@ -640,15 +563,9 @@ def _wire_picker(source_dd, chapter_dd, section_dd) -> None:
 
 
 def build_ui():
-    tracking_on = _tracker is not None
-    mode_note = (
-        "**Tracking mode** — questions chosen by curriculum priority, results saved."
-        if tracking_on else
-        "**Random mode** — questions drawn randomly. Pass `--track` to enable progress tracking."
-    )
 
     with gr.Blocks(title="Teaching Assistant") as demo:
-        gr.Markdown("# Teaching Assistant\n" + mode_note)
+        gr.Markdown("# Teaching Assistant")
 
         with gr.Tabs():
 
@@ -675,8 +592,6 @@ def build_ui():
                 gr.Markdown(
                     "Questions chosen by curriculum priority. "
                     "Filter by chapter or section to focus on one area."
-                    if tracking_on else
-                    "Leave all filters blank for a random question from the index."
                 )
 
                 gr.Markdown("### 📚 Generate from source")
@@ -718,10 +633,6 @@ def build_ui():
                 gr.Markdown(
                     "The assistant picks the next high-priority chunk and generates a "
                     "long answer question. Write your answer and get a score + feedback. "
-                    "Score >= 3/5 counts as correct in the tracker."
-                    if tracking_on else
-                    "The assistant generates a long answer question from your course material. "
-                    "Write your answer, then click **Get feedback**."
                 )
 
                 gr.Markdown("### 📚 Generate from source")
@@ -830,31 +741,6 @@ def build_ui():
                         deck_next_btn.click(fn=deck_next,      outputs=_deck_out)
                         deck_export_btn.click(fn=export_deck,  outputs=[deck_export_file])
 
-            # ── Tab 5: Progress ───────────────────────────────────────────────
-            with gr.Tab("Progress"):
-                gr.Markdown(
-                    "Curriculum coverage and accuracy, updated as you answer questions."
-                    if tracking_on else
-                    "Start the app with `--track` to enable the progress dashboard."
-                )
-                progress_html = gr.HTML(value=refresh_progress())
-                refresh_btn   = gr.Button("Refresh", variant="secondary")
-                refresh_btn.click(fn=refresh_progress, outputs=[progress_html])
-
-                if tracking_on:
-                    gr.Markdown("---\n**Reset progress**")
-                    p_source, p_chapter, p_section, _ = _make_topic_picker(
-                        show_topic_override=False
-                    )
-                    _wire_picker(p_source, p_chapter, p_section)
-                    reset_btn    = gr.Button("Reset selected", variant="stop")
-                    reset_status = gr.Markdown()
-                    reset_btn.click(
-                        fn      = reset_progress,
-                        inputs  = [p_source, p_chapter, p_section],
-                        outputs = [progress_html, reset_status],
-                    )
-
     return demo
 
 
@@ -873,8 +759,6 @@ if __name__ == "__main__":
     parser.add_argument("--share",      action="store_true")
     parser.add_argument("--pretrained", default=None, metavar="MODEL",
                         help="Model key or full HuggingFace model ID. Append :bnb4 for 4-bit.")
-    parser.add_argument("--track",      action="store_true",
-                        help="Enable progress tracking.")
     parser.add_argument("--chunks",     default=None,
                         help="Path to chunks.json. Defaults to {index}/chunks.json.")
     parser.add_argument("--progress",   default="progress.json",
@@ -892,7 +776,7 @@ if __name__ == "__main__":
     if args.pretrained:
         load_pretrained(args.pretrained)
 
-    # Load chunks for topic tree (independent of --track)
+    # Load chunks for topic tree
     chunks_path = args.chunks or str(Path(args.index) / "chunks.json")
     if Path(chunks_path).exists():
         import json
@@ -907,17 +791,6 @@ if __name__ == "__main__":
     else:
         print(f"[INFO] chunks.json not found at {chunks_path} — chapter picker disabled.")
         print("       Pass --chunks <path> to enable it.")
-
-    # Load progress tracker
-    if args.track:
-        if not Path(chunks_path).exists():
-            print(f"[WARN] --track enabled but chunks.json not found at: {chunks_path}")
-        else:
-            from tracker import ProgressTracker
-            _tracker = ProgressTracker(chunks_path, args.progress)
-            print(f"Progress tracking enabled. Saving to: {args.progress}")
-    else:
-        print("Random mode. Pass --track to enable progress tracking.")
 
     ui = build_ui()
     ui.launch(server_port=args.port, share=args.share)

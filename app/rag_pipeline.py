@@ -306,40 +306,6 @@ class RAGPipeline:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SECTION 4: Frontier model baseline (GPT-4) — "Model C"
-# ─────────────────────────────────────────────────────────────────────────────
-
-def answer_with_gpt4(
-    question:    str,
-    api_key:     str,
-    model:       str   = "gpt-4o-mini",
-    system_prompt: str = "You are a helpful teaching assistant for a machine learning course.",
-) -> str:
-    """
-    Get an answer from GPT-4 for comparison.
-
-    This is your frontier baseline. You run the same evaluation script
-    on these answers as on your model's answers to get apples-to-apples
-    comparison.
-
-    Using gpt-4o-mini for cost efficiency — it's still far above your
-    small model in capability. Use gpt-4o for a stronger baseline.
-    """
-    import openai
-    client = openai.OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": question},
-        ],
-        temperature=0.7,
-        max_tokens=300,
-    )
-    return response.choices[0].message.content.strip()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Demo
 # ─────────────────────────────────────────────────────────────────────────────
 
