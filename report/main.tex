@@ -1,0 +1,82 @@
+\documentclass{article}
+\usepackage[english]{babel}
+\usepackage{csquotes}
+\usepackage[a4paper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,fit,backgrounds,calc,shadows.blur}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+\usepackage[parfill]{parskip}
+\usepackage{biblatex}
+\addbibresource{references.bib}
+
+% TikZ styles reused across diagrams
+\tikzset{
+    block/.style={
+        rectangle, rounded corners=2pt, draw=black!70, thick,
+        fill=blue!5, minimum width=2.6cm, minimum height=0.9cm,
+        align=center, font=\small
+    },
+    data/.style={
+        rectangle, draw=black!70, thick,
+        fill=orange!10, minimum width=2.6cm, minimum height=0.9cm,
+        align=center, font=\small
+    },
+    model/.style={
+        rectangle, rounded corners=2pt, draw=black!70, thick,
+        fill=green!8, minimum width=2.6cm, minimum height=0.9cm,
+        align=center, font=\small
+    },
+    arrow/.style={-Stealth, thick, draw=black!75},
+    smallnote/.style={font=\footnotesize\itshape, text=black!60, align=center}
+}
+
+\begin{document}
+
+\begin{titlepage}
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{0pt}
+    \includegraphics[width=0.33\textwidth]{hvl_logo_engelsk.png}
+    \vspace*{2cm}
+
+    {\LARGE Project report in DAT255 -- Deep Learning Engineering}
+    \vspace*{2cm}
+
+    \rule{\linewidth}{1pt}
+    \vspace*{1cm}
+
+    {\Huge \textbf{A Course-Aware Teaching Assistant: Decoder-Only Transformer with Retrieval-Augmented Generation}}
+    \vspace*{1cm}
+
+    \rule{\linewidth}{1pt}
+    \Large
+    \vspace*{4cm}
+
+    \today \\
+    \vspace*{1cm}
+
+    Group member 1 (candidate number 123456) \\
+    Group member 2 (candidate number 234567) \\
+    Group member 3 (candidate number 345678)
+
+    \vfill
+    \small
+    I confirm that the work is self-prepared and that references/source references to all sources
+    used in the work are provided, cf.\ Regulation relating to academic studies and examinations
+    at the Western Norway University of Applied Sciences (HVL), §10.
+\end{titlepage}
+
+\input{problem_description}
+\input{data}
+\input{model_implementation}
+\input{evaluation}
+\input{deployment}
+\input{conclusion}
+
+\printbibliography
+
+\end{document}
