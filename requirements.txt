@@ -64,5 +64,6 @@ tiktoken        # for tokenization
 # timm                         # extra backbones (sometimes used together with HF)
 
 # If you work with quantized / efficient inference
-# bitsandbytes>=0.44.0         # 8-bit / 4-bit quantization support (Linux/WSL only on Windows)
-# peft                         # LoRA / QLoRA / adapters
+bitsandbytes>=0.44.0         # 8-bit / 4-bit quantization support (Linux/WSL only on Windows)
+peft                         # LoRA / QLoRA / adapters
+trl

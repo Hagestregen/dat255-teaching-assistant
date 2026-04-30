@@ -7,7 +7,6 @@ Tabs:
   2. Quiz         — multiple-choice questions
   3. Practice     — long-answer with scoring feedback
   4. Flashcards   — generate + deck browser
-  5. Progress     — curriculum coverage dashboard (tracking mode only)
 
 Run:
   # Random mode (no tracking):

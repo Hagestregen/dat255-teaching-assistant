@@ -62,6 +62,68 @@ TEST_SPLIT_PATH = _ROOT / "eval" / "test_split.json"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# HuggingFace model loader (for Qwen base or LoRA-finetuned Qwen)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def load_hf_model(model_id: str, lora_path: Optional[str] = None,
+                  device: str = "auto"):
+    """
+    Load a HuggingFace CausalLM, optionally with a merged LoRA adapter.
+
+    For your LoRA checkpoint point lora_path at the root qwen_lora/ dir
+    (the one with adapter_config.json + adapter_model.safetensors).
+    The checkpoint-N subdirs are mid-training snapshots; use the root.
+    """
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    print(f"Loading HF model: {model_id}")
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id, torch_dtype=torch.bfloat16, device_map=device,
+    )
+    if lora_path:
+        from peft import PeftModel
+        print(f"Applying LoRA adapter: {lora_path}")
+        model = PeftModel.from_pretrained(model, lora_path)
+        model = model.merge_and_unload()   # merge for normal inference speed
+
+    model.eval()
+    is_instruct = (
+        hasattr(tokenizer, "chat_template") and tokenizer.chat_template is not None
+    )
+    print(f"  instruct mode: {is_instruct}")
+    return model, tokenizer, is_instruct
+
+
+@torch.no_grad()
+def generate_answer_hf(
+    model,
+    hf_tokenizer,
+    is_instruct: bool,
+    prompt: str,
+    max_new_tokens: int = 200,
+) -> str:
+    """Generate an answer with a HuggingFace model (greedy, reproducible)."""
+    if is_instruct:
+        input_text = hf_tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False, add_generation_prompt=True,
+        )
+    else:
+        input_text = prompt
+
+    inputs = hf_tokenizer(input_text, return_tensors="pt").to(model.device)
+    out = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        do_sample=False,
+        pad_token_id=hf_tokenizer.eos_token_id,
+    )
+    new_ids = out[0][inputs["input_ids"].shape[1]:]
+    return hf_tokenizer.decode(new_ids, skip_special_tokens=True).strip()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Test-split persistence
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -189,7 +251,7 @@ def generate_answer(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def evaluate_checkpoint(
-    checkpoint_path: str,
+    checkpoint_path: Optional[str],
     output_dir: str,
     chunks_json_path: str,
     synthetic_jsonl_path: str,
@@ -201,6 +263,8 @@ def evaluate_checkpoint(
     max_new_tokens: int,
     temperature: float,
     use_ema: bool = False,
+    hf_model_id: Optional[str] = None,
+    lora_path: Optional[str] = None,
 ):
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -208,30 +272,51 @@ def evaluate_checkpoint(
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
-    print(f"Loading checkpoint: {checkpoint_path}")
-    model, _opt_state, step, ckpt_metrics = load_checkpoint(checkpoint_path, device)
-    model.eval()
+    # ── Choose backend: HF (Qwen / LoRA) or custom .pt checkpoint ────────────
+    use_hf = hf_model_id is not None
+    hf_tok = None
+    is_instruct = False
+    step, ckpt_metrics = 0, {}
 
-    # Optionally swap EMA shadow weights into the model for evaluation.
-    # The EMA shadow tends to give a small but consistent generalization
-    # bump; on this project's data it has been worth ~0.5–1.0 nats of val
-    # loss vs. the live weights at the same step.
-    if use_ema:
-        ckpt = torch.load(checkpoint_path, map_location=device)
-        ema_state = ckpt.get("ema_state")
-        if not ema_state:
-            raise RuntimeError(
-                f"--use-ema requested but {checkpoint_path} has no ema_state. "
-                f"Re-train with --ema-decay > 0 to populate it."
-            )
-        loaded = 0
-        with torch.no_grad():
-            for name, p in model.named_parameters():
-                if name in ema_state:
-                    p.data.copy_(ema_state[name].to(device))
-                    loaded += 1
-        print(f"Loaded {loaded} EMA shadow tensors into the model for evaluation.")
-        del ckpt
+    # Pre-load the judge model here so metrics.py never needs to import from
+    # the model package (it lacks the sys.path setup we have in this file).
+    judge_model_obj = None
+    judge_tokenizer = None
+    if use_judge:
+        print(f"Pre-loading judge model: {judge_model}")
+        judge_model_obj, judge_tokenizer, _ = load_hf_model(judge_model, device="auto")
+
+    if use_hf:
+        model, hf_tok, is_instruct = load_hf_model(
+            hf_model_id, lora_path=lora_path, device="auto"
+        )
+        # Fake step/metrics so the summary JSON stays the same shape
+        step = 0
+        ckpt_metrics = {"source": hf_model_id,
+                        "lora": lora_path or "none"}
+    else:
+        if not checkpoint_path:
+            raise ValueError("Either --checkpoint or --hf-model-id is required.")
+        print(f"Loading checkpoint: {checkpoint_path}")
+        model, _opt_state, step, ckpt_metrics = load_checkpoint(checkpoint_path, device)
+        model.eval()
+
+        if use_ema:
+            ckpt = torch.load(checkpoint_path, map_location=device)
+            ema_state = ckpt.get("ema_state")
+            if not ema_state:
+                raise RuntimeError(
+                    f"--use-ema requested but {checkpoint_path} has no ema_state. "
+                    f"Re-train with --ema-decay > 0 to populate it."
+                )
+            loaded = 0
+            with torch.no_grad():
+                for name, p in model.named_parameters():
+                    if name in ema_state:
+                        p.data.copy_(ema_state[name].to(device))
+                        loaded += 1
+            print(f"Loaded {loaded} EMA shadow tensors into the model for evaluation.")
+            del ckpt
 
     tokenizer = Tokenizer()
 
@@ -257,11 +342,17 @@ def evaluate_checkpoint(
         for i, ex in enumerate(examples):
             prompt = make_prompt(ex, with_context=with_context)
             try:
-                pred = generate_answer(
-                    model, tokenizer, prompt, device,
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
-                )
+                if use_hf:
+                    pred = generate_answer_hf(
+                        model, hf_tok, is_instruct, prompt,
+                        max_new_tokens=max_new_tokens,
+                    )
+                else:
+                    pred = generate_answer(
+                        model, tokenizer, prompt, device,
+                        max_new_tokens=max_new_tokens,
+                        temperature=temperature,
+                    )
             except Exception as e:
                 print(f"  [{i}] generation error: {e}")
                 pred = ""
@@ -284,6 +375,8 @@ def evaluate_checkpoint(
                     pred=pred,
                     gold=ex["answer"],
                     model_id=judge_model,
+                    model=judge_model_obj,
+                    tokenizer=judge_tokenizer,
                 )
                 if judge_out is not None:
                     for k in ("correctness", "completeness", "pedagogical_clarity"):
@@ -350,7 +443,14 @@ def evaluate_checkpoint(
 
 def main():
     p = argparse.ArgumentParser(description="Evaluate a trained Teaching Assistant checkpoint.")
-    p.add_argument("--checkpoint",      required=True, help="Path to .pt checkpoint")
+    p.add_argument("--checkpoint",      default=None,
+                   help="Path to .pt checkpoint (custom transformer backend)")
+    p.add_argument("--hf-model-id",     default=None,
+                   help="HuggingFace model ID to use instead of a .pt checkpoint, "
+                        "e.g. Qwen/Qwen2.5-1.5B-Instruct")
+    p.add_argument("--lora-path",       default=None,
+                   help="Path to LoRA adapter dir (root qwen_lora/ with "
+                        "adapter_config.json). Only used with --hf-model-id.")
     p.add_argument("--output-dir",      required=True, help="Where to write per-example + summary")
     p.add_argument("--chunks",          default="rag/rag_index/chunks.json",
                    help="Path to chunks.json (used only if test split not yet persisted)")
@@ -367,8 +467,12 @@ def main():
     p.add_argument("--max-new-tokens",  type=int,   default=200)
     p.add_argument("--temperature",     type=float, default=0.7)
     p.add_argument("--use-ema",         action="store_true",
-                   help="Use the EMA shadow weights stored in the checkpoint")
+                   help="Use the EMA shadow weights stored in the checkpoint "
+                        "(custom backend only)")
     args = p.parse_args()
+
+    if not args.checkpoint and not args.hf_model_id:
+        p.error("Provide either --checkpoint (custom model) or --hf-model-id (Qwen/LoRA).")
 
     evaluate_checkpoint(
         checkpoint_path      = args.checkpoint,
@@ -383,6 +487,8 @@ def main():
         max_new_tokens       = args.max_new_tokens,
         temperature          = args.temperature,
         use_ema              = args.use_ema,
+        hf_model_id          = args.hf_model_id,
+        lora_path            = args.lora_path,
     )
 
 

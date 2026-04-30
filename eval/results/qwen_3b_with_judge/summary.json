@@ -1,0 +1,36 @@
+{
+  "checkpoint": "None",
+  "step": 0,
+  "checkpoint_metrics": {
+    "source": "Qwen/Qwen2.5-3B-Instruct",
+    "lora": "none"
+  },
+  "n_examples": 5,
+  "with_context": false,
+  "judge_used": true,
+  "judge_model": "Qwen/Qwen2.5-7B-Instruct",
+  "metrics_mean": {
+    "exact_match": 0.0,
+    "token_f1": 0.21205218688934457,
+    "rouge_l": 0.14315389962161912,
+    "meteor": 0.32711699211258816,
+    "judge_correctness": 4.0,
+    "judge_completeness": 3.6,
+    "judge_pedagogical_clarity": 3.2,
+    "bertscore_p": 0.8190709948539734,
+    "bertscore_r": 0.897802472114563,
+    "bertscore_f1": 0.8565832376480103
+  },
+  "metrics_count": {
+    "exact_match": 5,
+    "token_f1": 5,
+    "rouge_l": 5,
+    "meteor": 5,
+    "judge_correctness": 5,
+    "judge_completeness": 5,
+    "judge_pedagogical_clarity": 5,
+    "bertscore_p": 5,
+    "bertscore_r": 5,
+    "bertscore_f1": 5
+  }
+}
