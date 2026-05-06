@@ -1,3 +1,6 @@
+## Hosted on:
+https://opinions-mainly-informed-regular.trycloudflare.com/
+
 ## Installation
 ### 1. Create and Activate Virtual Environment
 
